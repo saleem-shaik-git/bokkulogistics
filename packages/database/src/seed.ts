@@ -6,6 +6,7 @@
  *   - 1 store "Bokku" (code BOKKU, Lagos NG)               — Phase 3
  *   - 5 categories, 20 products with inventory + images    — Phase 3
  *   - store_staff links for manager@/bokku-admin@          — Phase 3
+ *   - default address for customer@bokku.test              — Phase 5
  *
  * All credentials and products are obviously fictional test data.
  */
@@ -319,6 +320,20 @@ async function main() {
       INSERT INTO store_staff (store_id, user_id) VALUES (${storeId}, ${user.id})
       ON CONFLICT (store_id, user_id) DO NOTHING RETURNING id`;
     console.log(link.length ? `✓ staff ${email}` : `• staff ${email} exists`);
+  }
+
+  // ── Customer default address (Phase 5) ─────────────────────────
+  const [customer] = await sql`SELECT id FROM users WHERE email = 'customer@bokku.test'`;
+  if (customer) {
+    const seeded = await sql`
+      INSERT INTO addresses (user_id, label, street, city, state, landmark, latitude, longitude, is_default)
+      SELECT ${customer.id}, 'Home', '15 Salvation Road, Opebi', 'Lagos', 'Lagos',
+             'Near Opebi roundabout', '6.6018000'::numeric, '3.3515000'::numeric, true
+      WHERE NOT EXISTS (
+        SELECT 1 FROM addresses WHERE user_id = ${customer.id} AND street = '15 Salvation Road, Opebi'
+      )
+      RETURNING id`;
+    console.log(seeded.length ? '✓ customer address (Home, Opebi)' : '• customer address exists');
   }
 
   console.log(`\nDev credentials: password "${SEED_PASSWORD}" for all seed users.`);

@@ -6,3 +6,4 @@ export const DOCS_PATH = 'api/docs';
 export const ENV_CONFIG = 'ENV_CONFIG';
 export const DRIZZLE_CLIENT = 'DRIZZLE_CLIENT';
 export const REDIS_CLIENT = 'REDIS_CLIENT';
+export const DELIVERY_PROVIDER = 'DELIVERY_PROVIDER';

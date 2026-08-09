@@ -136,14 +136,17 @@ export function CartDrawer() {
               <p className="text-xs text-slate-400">
                 Delivery and fees are calculated at checkout.
               </p>
-              <button
-                type="button"
-                disabled
-                title="Checkout arrives with Phase 5"
-                className="w-full cursor-not-allowed rounded-xl bg-slate-200 px-4 py-3 text-sm font-semibold text-slate-400"
+              <Link
+                href="/checkout"
+                onClick={() => setOpen(false)}
+                className={`block w-full rounded-xl px-4 py-3 text-center text-sm font-semibold transition ${
+                  unavailableCount > 0
+                    ? 'pointer-events-none bg-slate-200 text-slate-400'
+                    : 'bg-brand-600 text-white hover:bg-brand-700'
+                }`}
               >
-                Checkout · coming soon
-              </button>
+                {unavailableCount > 0 ? 'Fix unavailable items first' : 'Go to checkout'}
+              </Link>
               <button
                 type="button"
                 onClick={() => clearCart.mutate()}

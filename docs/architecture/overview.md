@@ -48,7 +48,7 @@ modules/payments ──┘         ▲
 | 2 | Authentication & RBAC | ✅ complete |
 | 3 | Catalogue | ✅ complete |
 | 4 | Cart | ✅ complete |
-| 5 | Checkout & pricing engine | ⬜ |
+| 5 | Checkout & pricing engine | ✅ complete |
 | 6 | Payments (Paystack + mock) | ⬜ |
 | 7 | Orders + state machine | ⬜ |
 | 8 | Bokku operations dashboard | ⬜ |

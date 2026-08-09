@@ -115,6 +115,36 @@ sellable stock (on hand − reserved); the line's `available` flag flips false
 when stock later drops below the cart quantity. Stock is *not* reserved at
 cart time — that happens at checkout (Phase 7).
 
+## Addresses (Phase 5)
+
+Authenticated, owner-scoped (`404 ADDRESS_NOT_FOUND` for other users' ids):
+
+- `GET /addresses` — default first; `POST /addresses` (first address becomes
+  default automatically; max 10/user → `409 ADDRESS_LIMIT_REACHED`;
+  latitude/longitude optional but must come as a pair →
+  `400 COORDINATE_PAIR_REQUIRED`); `PATCH /addresses/:id`
+  (`isDefault:true` demotes the previous default atomically — single default
+  is also enforced by a partial unique index); `DELETE /addresses/:id`
+  (deleting the default promotes the most recent remaining one).
+
+## Checkout (Phase 5)
+
+- `POST /checkout/preview` — `{ addressId }` → the **server-computed** order
+  breakdown. Validates: cart non-empty (`400 CART_EMPTY`), every line still
+  fulfillable (`409 CART_ITEMS_UNAVAILABLE`), address owned by the caller.
+  Response: lines at live DB prices, delivery quote from the configured
+  **DeliveryProvider** (`DELIVERY_DEFAULT_PROVIDER`, default MOCK:
+  ₦500 + ₦150/started-km, haversine store→address, 5 km fallback when
+  coordinates are missing, 15-min quote validity), then the pricing policy
+  (constants in `@bokku/shared`: `serviceFee = 5% of subtotal`,
+  `VAT = 7.5% of subtotal`, integer kobo, half-up rounding;
+  `total = subtotal + deliveryFee + serviceFee + tax − discount ≥ 0`).
+  Read-only and idempotent — safe to re-call before paying.
+- Dispatch lifecycle (`createDelivery/status/cancel/tracking`) is defined on
+  the DeliveryProvider interface but activates with orders in Phase 9; the
+  mock rejects those calls with `DELIVERY_DISPATCH_NOT_IMPLEMENTED` until
+  then, and UBER/BOLT fail fast `DELIVERY_PROVIDER_NOT_CONFIGURED`.
+
 ## Security defaults
 
 Helmet headers, CORS (open in dev, origin-locked via `CORS_ORIGINS` in
