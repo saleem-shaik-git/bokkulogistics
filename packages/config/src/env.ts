@@ -18,8 +18,10 @@ export const envSchema = z
     JWT_SECRET: z.string().default('dev-only-jwt-secret-change-me'),
     JWT_REFRESH_SECRET: z.string().default('dev-only-jwt-refresh-secret-change-me'),
 
+    PAYMENT_PROVIDER: z.enum(['MOCK', 'PAYSTACK']).default('MOCK'),
     PAYSTACK_PUBLIC_KEY: z.string().optional(),
     PAYSTACK_SECRET_KEY: z.string().optional(),
+    PAYSTACK_API_URL: z.string().url().default('https://api.paystack.co'),
 
     GOOGLE_MAPS_API_KEY: z.string().optional(),
 

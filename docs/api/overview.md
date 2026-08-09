@@ -145,6 +145,37 @@ Authenticated, owner-scoped (`404 ADDRESS_NOT_FOUND` for other users' ids):
   mock rejects those calls with `DELIVERY_DISPATCH_NOT_IMPLEMENTED` until
   then, and UBER/BOLT fail fast `DELIVERY_PROVIDER_NOT_CONFIGURED`.
 
+## Payments (Phase 6)
+
+Trust model: **amounts come only from server-side computation; confirmation
+comes only from server-side verification** (webhook → verifyPayment, or the
+same verify on read). Client redirects never mark anything paid.
+
+- `POST /payments/initialize` (auth) — `{ addressId, callbackUrl? }`. Recomputes
+  the checkout preview and creates the transaction **idempotently**: same
+  cart + same total ⇒ the same `bokku_pay_<32hex>` reference is returned;
+  changed total ⇒ the stale PENDING row is ABANDONED (`CART_TOTAL_CHANGED`)
+  and a fresh reference issued (one-pending-per-cart is enforced by a partial
+  unique index, race-safe); a SUCCESS cart ⇒ `409 CART_ALREADY_PAID`.
+  Response: payment summary + `authorizationUrl` (Paystack hosted page, or
+  `/payment/mock?reference=…` for the mock provider).
+- `GET /payments/:reference` (auth, owner only → 404 otherwise). While
+  PENDING, re-verifies with the provider on read — the webhook-delay fallback.
+- `POST /payments/webhook/paystack` (public, hidden from Swagger) — HMAC
+  SHA-512 over the RAW body (`x-paystack-signature`, timing-safe compare);
+  rejects invalid signatures `401 PAYMENT_WEBHOOK_SIGNATURE_INVALID` (audited
+  `payment.webhook_rejected`), acknowledges unknown references and
+  non-`charge.success` events with 200, and applies `charge.success` through
+  the idempotent confirmation path (duplicates are no-ops; provider-reported
+  amount ≠ our amount ⇒ FAILED + `payment.amount_mismatch` audit).
+- `POST /payments/mock/complete` (public, mock provider + non-production
+  only) — the web mock checkout reports success/failure through **the same
+  confirmation path** a real webhook drives.
+- Provider selection via `PAYMENT_PROVIDER` (default MOCK; PAYSTACK fails
+  fast without `PAYSTACK_SECRET_KEY`). `refundPayment` exists on the
+  interface for Phase 7 order refunds. Audits: `payment.initialized /
+  succeeded / failed / amount_mismatch / webhook_rejected`.
+
 ## Security defaults
 
 Helmet headers, CORS (open in dev, origin-locked via `CORS_ORIGINS` in

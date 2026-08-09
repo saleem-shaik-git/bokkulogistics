@@ -15,6 +15,7 @@ import { ProductsModule } from './modules/products/products.module';
 import { CartModule } from './modules/cart/cart.module';
 import { AddressesModule } from './modules/addresses/addresses.module';
 import { CheckoutModule } from './modules/checkout/checkout.module';
+import { PaymentsModule } from './modules/payments/payments.module';
 import { BokkuModule } from './modules/bokku/bokku.module';
 
 @Module({
@@ -31,6 +32,7 @@ import { BokkuModule } from './modules/bokku/bokku.module';
     CartModule,
     AddressesModule,
     CheckoutModule,
+    PaymentsModule,
     BokkuModule,
   ],
   providers: [

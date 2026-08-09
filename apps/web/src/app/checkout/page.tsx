@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { SERVICE_FEE_BPS, VAT_BPS, type CheckoutPreview, type PublicAddress } from '@bokku/shared';
+import { useMutation } from '@tanstack/react-query';
 
 import { AddressForm } from '@/components/address-form';
 import { CartButton } from '@/components/cart-button';
@@ -12,12 +13,14 @@ import { useCart } from '@/hooks/use-cart';
 import { useCheckoutPreview } from '@/hooks/use-checkout-preview';
 import { ApiError } from '@/lib/api-client';
 import { formatKobo } from '@/lib/money';
+import { initializePayment } from '@/lib/payments-api';
 import { useAuthStore } from '@/stores/auth-store';
 
 /**
- * Checkout (Phase 5): pick a delivery address, see the fully
- * server-computed price breakdown (items + delivery quote + fees + VAT).
- * Payment/order placement arrives in Phase 6.
+ * Checkout: pick a delivery address, review the fully server-computed price
+ * breakdown (items + delivery quote + fees + VAT), then pay. The payment is
+ * initialized server-side with this exact breakdown — the client never
+ * submits amounts. Order placement arrives in Phase 7.
  */
 export default function CheckoutPage() {
   const router = useRouter();
@@ -163,17 +166,7 @@ export default function CheckoutPage() {
             >
               3 · Payment
             </h2>
-            <button
-              type="button"
-              disabled
-              title="Paystack checkout arrives with Phase 6"
-              className="w-full cursor-not-allowed rounded-xl bg-slate-200 px-4 py-3 text-sm font-semibold text-slate-400"
-            >
-              Pay &amp; place order · Phase 6
-            </button>
-            <p className="text-center text-xs text-slate-400">
-              You’ll pay securely with Paystack. Your card never touches our servers.
-            </p>
+            <PaymentSection addressId={effectiveAddressId} preview={previewQuery.data} />
           </section>
         </>
       )}
@@ -258,6 +251,61 @@ function AddressCard({
           Delete
         </button>
       </div>
+    </div>
+  );
+}
+
+function PaymentSection({
+  addressId,
+  preview,
+}: {
+  addressId: string | null;
+  preview: CheckoutPreview | undefined;
+}) {
+  const payment = useMutation({
+    mutationFn: () =>
+      initializePayment({
+        addressId: addressId!,
+        callbackUrl: `${window.location.origin}/payment/result`,
+      }),
+    onSuccess: (result) => {
+      // Hosted checkout (Paystack) or the mock sandbox page — the API
+      // decides the target; the browser is just sent there.
+      window.location.assign(result.authorizationUrl);
+    },
+  });
+
+  const ready = !!addressId && !!preview;
+  const serverError =
+    payment.error instanceof ApiError
+      ? payment.error.message
+      : payment.isError
+        ? 'Could not start the payment'
+        : null;
+
+  return (
+    <div className="flex flex-col gap-2">
+      <button
+        type="button"
+        disabled={!ready || payment.isPending}
+        onClick={() => payment.mutate()}
+        className="w-full rounded-xl bg-brand-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
+      >
+        {payment.isPending
+          ? 'Starting payment…'
+          : preview
+            ? `Pay ${formatKobo(preview.total)}`
+            : 'Add an address to pay'}
+      </button>
+      {serverError && (
+        <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
+          {serverError}
+        </p>
+      )}
+      <p className="text-center text-xs text-slate-400">
+        Secure checkout — the provider confirms every payment server-side. Your card never touches
+        our servers.
+      </p>
     </div>
   );
 }

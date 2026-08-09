@@ -49,7 +49,7 @@ modules/payments ──┘         ▲
 | 3 | Catalogue | ✅ complete |
 | 4 | Cart | ✅ complete |
 | 5 | Checkout & pricing engine | ✅ complete |
-| 6 | Payments (Paystack + mock) | ⬜ |
+| 6 | Payments (Paystack + mock) | ✅ complete |
 | 7 | Orders + state machine | ⬜ |
 | 8 | Bokku operations dashboard | ⬜ |
 | 9 | Delivery adapters | ⬜ |

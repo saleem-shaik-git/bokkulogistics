@@ -17,3 +17,13 @@ export const productStatusEnum = pgEnum('product_status', [
   'OUT_OF_STOCK',
   'DRAFT',
 ]);
+
+export const paymentProviderEnum = pgEnum('payment_provider', ['MOCK', 'PAYSTACK']);
+
+export const paymentStatusEnum = pgEnum('payment_status', [
+  'PENDING',
+  'SUCCESS',
+  'FAILED',
+  'ABANDONED',
+  'REFUNDED',
+]);

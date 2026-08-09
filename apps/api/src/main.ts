@@ -15,6 +15,9 @@ async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     // Structured request logging is handled by LoggingInterceptor.
     logger: ['error', 'warn', 'log'],
+    // Keep the raw request body around — the Paystack webhook HMAC is
+    // computed over it exactly as sent.
+    rawBody: true,
   });
 
   // Security headers. CSP is relaxed for Swagger UI assets.

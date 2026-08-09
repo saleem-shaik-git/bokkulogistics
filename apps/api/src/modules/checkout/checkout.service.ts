@@ -83,6 +83,7 @@ export class CheckoutService {
 
     return {
       cartId: cart.id,
+      storeId: cart.storeId!,
       address,
       lines: cart.items.map((line) => ({
         productId: line.productId,

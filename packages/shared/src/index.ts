@@ -73,3 +73,4 @@ export * from './catalogue';
 export * from './cart';
 export * from './addresses';
 export * from './checkout';
+export * from './payments';

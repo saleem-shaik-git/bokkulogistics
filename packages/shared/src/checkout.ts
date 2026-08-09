@@ -44,6 +44,7 @@ export interface CheckoutQuote {
  */
 export interface CheckoutPreview {
   cartId: string;
+  storeId: string;
   address: PublicAddress;
   lines: CheckoutPreviewLine[];
   subtotal: number;
