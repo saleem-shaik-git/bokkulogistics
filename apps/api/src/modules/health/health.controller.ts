@@ -3,9 +3,11 @@ import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { HealthCheckResult } from '@bokku/shared';
 
 import { RawResponse } from '../../common/interceptors/transform.interceptor';
+import { Public } from '../../common/decorators/public.decorator';
 import { HealthService } from './health.service';
 
 @ApiTags('Health')
+@Public()
 @Controller('health')
 export class HealthController {
   constructor(private readonly healthService: HealthService) {}

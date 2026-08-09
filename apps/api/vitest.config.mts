@@ -8,6 +8,9 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['test/**/*.spec.ts', 'src/**/*.spec.ts'],
+    globalSetup: ['test/global-setup.ts'],
+    testTimeout: 30_000,
+    hookTimeout: 60_000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],

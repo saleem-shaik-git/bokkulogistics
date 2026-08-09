@@ -54,7 +54,6 @@ async function bootstrap(): Promise<void> {
   );
 
   app.enableShutdownHooks();
-
   const config = app.get<EnvConfig>('ENV_CONFIG');
   const swaggerConfig = new DocumentBuilder()
     .setTitle(config.APP_NAME)

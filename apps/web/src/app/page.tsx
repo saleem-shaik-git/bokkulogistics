@@ -1,17 +1,19 @@
 import Link from 'next/link';
 
+import { AccountMenu } from '@/components/account-menu';
 import { HealthStatus } from '@/components/health-status';
 
 export default function HomePage() {
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col gap-6 px-5 py-10 sm:max-w-2xl">
-      <header className="flex items-center justify-between">
+      <header className="flex items-start justify-between gap-4">
         <div>
           <p className="text-xs font-semibold uppercase tracking-widest text-brand-600">
             Bokku Logistics
           </p>
           <h1 className="mt-1 text-3xl font-bold tracking-tight">Shop Bokku. Delivered fast.</h1>
         </div>
+        <AccountMenu />
       </header>
 
       <p className="text-slate-600">

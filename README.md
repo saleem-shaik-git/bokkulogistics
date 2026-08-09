@@ -4,7 +4,7 @@ Independent commerce & delivery orchestration platform. Customers shop from
 **Bokku**, choose a delivery provider (Uber / Bolt / mock), pay via Paystack,
 and track the order from *pending payment* to *delivered*.
 
-> Status: **Phase 1 — Foundation** complete. Business features land per the
+> Status: **Phase 2 — Authentication & RBAC** complete. Business features land per the
 > phased plan in [`docs/architecture/overview.md`](docs/architecture/overview.md).
 
 ## Stack
@@ -62,6 +62,23 @@ pnpm dev
 | http://localhost:3000            | Customer storefront        |
 | http://localhost:4000/api/v1/health | API health (db + redis probes) |
 | http://localhost:4000/api/docs   | Swagger UI                 |
+
+### Seeded test credentials
+
+`pnpm db:seed` creates dev-only accounts (password for all: `Password123!`):
+
+| Email | Role |
+| ----- | ---- |
+| `admin@bokku.test` | PLATFORM_ADMIN |
+| `bokku-admin@bokku.test` | BOKKU_ADMIN |
+| `manager@bokku.test` | STORE_MANAGER |
+| `customer@bokku.test` | CUSTOMER |
+
+Authentication endpoints live under `/api/v1/auth/*` (register, login, refresh
+with rotation + reuse detection, logout, forgot/reset password, verify-email,
+me). Outside production, verification/reset tokens are returned in the response
+under `data.debug.*` until the notifications module ships (Phase 11) — this is
+deliberate so flows stay testable without SMTP.
 
 ### Verifying the database connection
 

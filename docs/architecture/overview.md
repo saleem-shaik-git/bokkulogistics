@@ -45,7 +45,7 @@ modules/payments ──┘         ▲
 | # | Phase | Status |
 | - | ----- | ------ |
 | 1 | Foundation (this scaffold) | ✅ complete |
-| 2 | Authentication & RBAC | ⬜ |
+| 2 | Authentication & RBAC | ✅ complete |
 | 3 | Catalogue | ⬜ |
 | 4 | Cart | ⬜ |
 | 5 | Checkout & pricing engine | ⬜ |
