@@ -89,6 +89,32 @@ Bokku operations (`Authorization: Bearer …` + STORE_MANAGER/BOKKU_ADMIN/PLATFO
 Prices are integer **kobo**; product list/detail include `stockQuantity`
 (on hand − reserved) and `available` (ACTIVE ∧ stock > 0).
 
+## Cart (Phase 4)
+
+Authenticated (any role; JWT required):
+
+- `GET /cart` — the current cart with **live** prices/stock re-joined from
+  the products/inventory tables on every read (no price snapshots here).
+  Returns `{ id: null, items: [], itemCount: 0, subtotal: 0 }` when the user
+  has never added anything.
+- `POST /cart/items` — `{ productId, quantity }` only; smuggled fields (e.g.
+  `price`) are rejected with 400. Merges into the existing line atomically
+  (unique `(cart_id, product_id)` upsert); creates the cart lazily on first
+  add. Errors: `404 PRODUCT_NOT_FOUND`, `409 PRODUCT_UNAVAILABLE`
+  (not ACTIVE), `409 OUT_OF_STOCK`, `409 INSUFFICIENT_STOCK` (message
+  includes the remaining count), `409 CART_STORE_CONFLICT` (see rules below).
+- `PATCH /cart/items/:itemId` — set exact quantity (1–99), stock re-validated.
+- `DELETE /cart/items/:itemId` — remove one line.
+- `DELETE /cart` — empty the cart; idempotent.
+
+Rules: one cart per user (unique index), **single-store carts** —
+adding a product from another store → `409 CART_STORE_CONFLICT`
+until the cart is cleared. Lines are owner-scoped: touching another user's
+line → `404 CART_ITEM_NOT_FOUND` (no IDOR). Quantities are validated against
+sellable stock (on hand − reserved); the line's `available` flag flips false
+when stock later drops below the cart quantity. Stock is *not* reserved at
+cart time — that happens at checkout (Phase 7).
+
 ## Security defaults
 
 Helmet headers, CORS (open in dev, origin-locked via `CORS_ORIGINS` in

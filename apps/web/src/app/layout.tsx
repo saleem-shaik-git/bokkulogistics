@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 
+import { CartDrawer } from '@/components/cart-drawer';
 import { Providers } from '@/components/providers';
 
 import './globals.css';
@@ -17,7 +18,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <body>
-        <Providers>{children}</Providers>
+        <Providers>
+          {children}
+          <CartDrawer />
+        </Providers>
       </body>
     </html>
   );

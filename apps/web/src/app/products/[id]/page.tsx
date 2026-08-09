@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
+import { CartButton } from '@/components/cart-button';
 import { PurchasePanel } from '@/components/purchase-panel';
 import { fetchProduct } from '@/lib/catalogue-api';
 import { formatKobo } from '@/lib/money';
@@ -18,10 +19,11 @@ export default async function ProductPage({ params }: Props) {
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col gap-5 px-5 py-8 sm:max-w-2xl">
-      <nav className="text-sm text-slate-500">
+      <nav className="flex items-center justify-between text-sm text-slate-500">
         <Link href="/" className="font-medium text-brand-600 hover:underline">
           ← Back to shop
         </Link>
+        <CartButton />
       </nav>
 
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">

@@ -3,7 +3,8 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation } from '@tanstack/react-query';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense } from 'react';
 import { useForm } from 'react-hook-form';
 import { loginSchema, type LoginInput } from '@bokku/validation';
 
@@ -12,8 +13,23 @@ import { ApiError } from '@/lib/api-client';
 import { login as loginRequest } from '@/lib/auth-api';
 import { useAuthStore } from '@/stores/auth-store';
 
+/** Same-origin paths only — never let ?next= become an open redirect. */
+function safeNextPath(next: string | null): string {
+  if (next && next.startsWith('/') && !next.startsWith('//')) return next;
+  return '/';
+}
+
 export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const setSession = useAuthStore((s) => s.setSession);
   const {
     register,
@@ -25,7 +41,7 @@ export default function LoginPage() {
     mutationFn: loginRequest,
     onSuccess: (data) => {
       setSession(data.user, data.tokens);
-      router.push('/');
+      router.push(safeNextPath(searchParams.get('next')));
     },
   });
 

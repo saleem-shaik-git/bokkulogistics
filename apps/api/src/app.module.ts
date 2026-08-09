@@ -12,6 +12,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { StoresModule } from './modules/stores/stores.module';
 import { ProductsModule } from './modules/products/products.module';
+import { CartModule } from './modules/cart/cart.module';
 import { BokkuModule } from './modules/bokku/bokku.module';
 
 @Module({
@@ -25,6 +26,7 @@ import { BokkuModule } from './modules/bokku/bokku.module';
     HealthModule,
     StoresModule,
     ProductsModule,
+    CartModule,
     BokkuModule,
   ],
   providers: [

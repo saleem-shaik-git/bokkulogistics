@@ -32,7 +32,7 @@ export interface ListProductsQuery extends PaginationQuery {
 }
 
 /** Sellable units = on hand − reserved. Expressed once, reused everywhere. */
-const SELLABLE_SQL = sql<number>`coalesce(${inventory.quantityOnHand}, 0) - coalesce(${inventory.reservedQuantity}, 0)`;
+export const SELLABLE_SQL = sql<number>`coalesce(${inventory.quantityOnHand}, 0) - coalesce(${inventory.reservedQuantity}, 0)`;
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

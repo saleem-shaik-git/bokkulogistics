@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { Suspense } from 'react';
 
 import { AccountMenu } from '@/components/account-menu';
+import { CartButton } from '@/components/cart-button';
 import { HealthStatus } from '@/components/health-status';
 import { Storefront } from '@/components/storefront';
 import { fetchFirstStore } from '@/lib/catalogue-api';
@@ -21,7 +22,10 @@ export default async function HomePage() {
           </p>
           <h1 className="mt-1 text-3xl font-bold tracking-tight">Shop Bokku. Delivered fast.</h1>
         </div>
-        <AccountMenu />
+        <div className="flex items-center gap-2">
+          <CartButton />
+          <AccountMenu />
+        </div>
       </header>
 
       {store ? (
