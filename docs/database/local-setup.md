@@ -14,7 +14,18 @@ docker compose up -d postgres redis
 This creates role `bokku`, database `bokku_dev`, password `bokku_dev_password`
 (matching `.env.example`).
 
-## Option B — native install
+## Option B — sandbox-native (no Docker, no apt)
+
+```bash
+./scripts/setup-dev-services.sh
+```
+
+Installs PostgreSQL 16 + Redis 7 into `<repo>/.services/` (pgserver PyPI wheel + Redis
+7.2.10 source build), initializes the cluster, and creates `bokku` / `bokku_dev` /
+`bokku_test` with SCRAM password auth — idempotent, safe to re-run after environment
+rebuilds. Logs in `.services/*.log`.
+
+## Option C — your own native install
 
 ```sql
 CREATE ROLE bokku LOGIN PASSWORD 'bokku_dev_password';

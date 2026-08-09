@@ -2,3 +2,8 @@ export * from './enums';
 export * from './users';
 export * from './auth-tokens';
 export * from './audit';
+export * from './stores';
+export * from './categories';
+export * from './products';
+export * from './inventory';
+export * from './store-staff';

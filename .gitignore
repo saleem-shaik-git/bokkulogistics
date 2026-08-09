@@ -31,3 +31,10 @@ pnpm-debug.log*
 .vscode/*
 !.vscode/extensions.json
 *.swp
+
+# Local dev services (binaries + data, installed by scripts/setup-dev-services.sh)
+.services/
+
+# Generated / build metadata
+apps/web/next-env.d.ts
+*.tsbuildinfo

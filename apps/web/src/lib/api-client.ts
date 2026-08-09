@@ -18,14 +18,19 @@ interface RequestOptions {
   accessToken?: string;
 }
 
+// Browser: same-origin via Next rewrites proxy. Server components/Node:
+// absolute URL straight to the API (relative fetch doesn't exist there).
+const SERVER_BASE =
+  typeof window === 'undefined' ? (process.env.API_INTERNAL_URL ?? 'http://127.0.0.1:4000') : '';
+
 /**
- * Same-origin API client. Understands the standard response envelope,
- * unwraps `data` on success, and throws ApiError with the server `code`.
+ * Envelope-aware API client. Unwraps `data` on success,
+ * throws ApiError with the server `code` on failure.
  */
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(`/api/v1${path}`, {
+    res = await fetch(`${SERVER_BASE}/api/v1${path}`, {
       method: options.method ?? (options.body !== undefined ? 'POST' : 'GET'),
       headers: {
         'content-type': 'application/json',

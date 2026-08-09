@@ -15,6 +15,13 @@
       "when": 1786306964934,
       "tag": "0001_soft_green_goblin",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1786311123102,
+      "tag": "0002_overjoyed_random",
+      "breakpoints": true
     }
   ]
 }

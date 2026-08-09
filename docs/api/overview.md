@@ -70,6 +70,25 @@ Probes time out after 2s and degrade individually (`status` becomes `error`).
   `auth.refresh.reuse_detected`, `auth.password_reset.*`, `auth.email_verified`
   are written to `audit_logs`.
 
+## Catalogue (Phase 3)
+
+Public, no auth:
+- `GET /stores`, `GET /stores/:id`, `GET /stores/:storeId/categories`
+- `GET /stores/:storeId/products?page&limit&q&category` — `q` searches
+  name/description (ILIKE, wildcard-escaped); `category` accepts slug or UUID.
+- `GET /products/:id` — detail incl. images, SKU, sellable stock, availability.
+
+Bokku operations (`Authorization: Bearer …` + STORE_MANAGER/BOKKU_ADMIN/PLATFORM_ADMIN
++ store_staff membership):
+- `GET|POST /bokku/products`, `PATCH /bokku/products/:id`
+  (slug/SKU auto-generated; creation + price/status changes audited).
+- `GET /bokku/inventory` — stock + low-stock flags.
+- `PATCH /bokku/inventory/:productId` — `{ adjustment | setQuantity, lowStockThreshold?, reason }`;
+  row-locked, never negative (`409 INSUFFICIENT_STOCK`), every change audited with reason.
+
+Prices are integer **kobo**; product list/detail include `stockQuantity`
+(on hand − reserved) and `available` (ACTIVE ∧ stock > 0).
+
 ## Security defaults
 
 Helmet headers, CORS (open in dev, origin-locked via `CORS_ORIGINS` in

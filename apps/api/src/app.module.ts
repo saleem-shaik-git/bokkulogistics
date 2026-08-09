@@ -10,6 +10,9 @@ import { HealthModule } from './modules/health/health.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
+import { StoresModule } from './modules/stores/stores.module';
+import { ProductsModule } from './modules/products/products.module';
+import { BokkuModule } from './modules/bokku/bokku.module';
 
 @Module({
   imports: [
@@ -20,6 +23,9 @@ import { UsersModule } from './modules/users/users.module';
     AuthModule,
     UsersModule,
     HealthModule,
+    StoresModule,
+    ProductsModule,
+    BokkuModule,
   ],
   providers: [
     // Order matters: authenticate first, authorize second.

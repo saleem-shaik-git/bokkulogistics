@@ -1,9 +1,17 @@
 import Link from 'next/link';
+import { Suspense } from 'react';
 
 import { AccountMenu } from '@/components/account-menu';
 import { HealthStatus } from '@/components/health-status';
+import { Storefront } from '@/components/storefront';
+import { fetchFirstStore } from '@/lib/catalogue-api';
 
-export default function HomePage() {
+export const dynamic = 'force-dynamic';
+
+export default async function HomePage() {
+  // MVP has a single store; later this becomes a store selector.
+  const store = await fetchFirstStore().catch(() => null);
+
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col gap-6 px-5 py-10 sm:max-w-2xl">
       <header className="flex items-start justify-between gap-4">
@@ -16,31 +24,29 @@ export default function HomePage() {
         <AccountMenu />
       </header>
 
-      <p className="text-slate-600">
-        Phase 1 foundation is live: Next.js storefront, NestJS API, PostgreSQL 16, Redis 7 and
-        Swagger docs — wired together in a Turborepo monorepo.
-      </p>
+      {store ? (
+        <>
+          <p className="text-sm text-slate-500">
+            {store.description ?? 'Your neighborhood essentials'} · {store.city}
+            {store.openingTime &&
+              ` · Open ${store.openingTime.slice(0, 5)}–${store.closingTime?.slice(0, 5)}`}
+          </p>
+          <Suspense fallback={<div className="h-40 animate-pulse rounded-2xl bg-slate-100" />}>
+            <Storefront storeId={store.id} />
+          </Suspense>
+        </>
+      ) : (
+        <p className="rounded-xl bg-red-50 p-4 text-sm text-red-700">
+          The store catalogue is unavailable right now.
+        </p>
+      )}
 
-      <HealthStatus />
-
-      <section className="grid grid-cols-2 gap-3">
-        <div className="rounded-2xl border border-dashed border-slate-300 p-4 text-sm text-slate-500">
-          <p className="font-medium text-slate-700">Catalogue</p>
-          <p className="mt-1">Stores, categories &amp; products arrive in Phase 3.</p>
+      <details className="text-xs text-slate-400">
+        <summary className="cursor-pointer">Platform status</summary>
+        <div className="pt-3">
+          <HealthStatus />
         </div>
-        <div className="rounded-2xl border border-dashed border-slate-300 p-4 text-sm text-slate-500">
-          <p className="font-medium text-slate-700">Cart &amp; checkout</p>
-          <p className="mt-1">Cart, addresses and pricing arrive in Phases 4–5.</p>
-        </div>
-        <div className="rounded-2xl border border-dashed border-slate-300 p-4 text-sm text-slate-500">
-          <p className="font-medium text-slate-700">Payments</p>
-          <p className="mt-1">Paystack integration arrives in Phase 6.</p>
-        </div>
-        <div className="rounded-2xl border border-dashed border-slate-300 p-4 text-sm text-slate-500">
-          <p className="font-medium text-slate-700">Delivery</p>
-          <p className="mt-1">Uber / Bolt adapters arrive in Phase 9.</p>
-        </div>
-      </section>
+      </details>
 
       <footer className="mt-auto text-xs text-slate-400">
         <Link href="/api/health" className="underline underline-offset-2">

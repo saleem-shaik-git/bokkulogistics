@@ -4,8 +4,16 @@ Independent commerce & delivery orchestration platform. Customers shop from
 **Bokku**, choose a delivery provider (Uber / Bolt / mock), pay via Paystack,
 and track the order from *pending payment* to *delivered*.
 
-> Status: **Phase 2 — Authentication & RBAC** complete. Business features land per the
+> Status: **Phase 3 — Catalogue** complete. Business features land per the
 > phased plan in [`docs/architecture/overview.md`](docs/architecture/overview.md).
+
+> Conventions worth knowing:
+> - **Money is always integer kobo** (`price`, all fees) — never floats. ₦1 = 100 kobo.
+> - Stock authority is the `inventory` table (unique per store+product);
+>   sellable = `quantity_on_hand − reserved_quantity` and can never go negative
+>   (row locks + CHECK constraints).
+> - Bokku ops (`/api/v1/bokku/*`) requires role **and** a `store_staff`
+>   membership row — URL ids can't cross stores (rule 9).
 
 ## Stack
 

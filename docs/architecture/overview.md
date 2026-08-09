@@ -46,7 +46,7 @@ modules/payments ──┘         ▲
 | - | ----- | ------ |
 | 1 | Foundation (this scaffold) | ✅ complete |
 | 2 | Authentication & RBAC | ✅ complete |
-| 3 | Catalogue | ⬜ |
+| 3 | Catalogue | ✅ complete |
 | 4 | Cart | ⬜ |
 | 5 | Checkout & pricing engine | ⬜ |
 | 6 | Payments (Paystack + mock) | ⬜ |
