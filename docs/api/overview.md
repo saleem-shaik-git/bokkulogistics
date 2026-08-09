@@ -176,6 +176,53 @@ same verify on read). Client redirects never mark anything paid.
   interface for Phase 7 order refunds. Audits: `payment.initialized /
   succeeded / failed / amount_mismatch / webhook_rejected`.
 
+## Orders (Phase 7)
+
+An order is born **from a settled payment** — auto-converted right inside
+the payment confirmation, or placed explicitly with `POST /orders`. Both
+paths flow through the same conversion, anchored by a unique
+`orders.payment_id` (one order per payment ⇒ retries converge). In one
+transaction: stock is reserved (guarded conditional UPDATEs),
+`BK-YYYYMMDD-XXXXXX` number generated, the order is inserted
+PENDING_PAYMENT with full price/address/quote snapshots, item snapshots are
+copied from the payment metadata, the order moves to PAID, and the source
+cart is consumed. Any failure rolls everything back (audited
+`order.conversion_failed`) — never a partial order.
+
+- `POST /orders` (auth) — `{ paymentReference }`; idempotent. 404
+  `PAYMENT_NOT_FOUND` for another user's reference, 409 `PAYMENT_NOT_SETTLED`
+  while the payment is unconfirmed, 409 `INSUFFICIENT_STOCK` when an
+  oversell race lost (payment stays settled for support).
+- `GET /orders?page&limit` (auth) — own orders, newest first, with
+  `itemCount`.
+- `GET /orders/:id` (auth, owner only → 404) — full detail: item snapshots
+  (immune to later catalogue edits), delivery address/quote snapshots,
+  subtotal/deliveryFee/serviceFee/tax/discount/total (integer kobo),
+  timestamps.
+- `POST /orders/:id/cancel` (auth, owner) — only legal while
+  PENDING_PAYMENT (policy); paid orders are cancelled by Bokku staff who
+  run the refund path. 409 `ORDER_INVALID_TRANSITION` otherwise.
+
+Bokku operations (staff gates as in [Catalogue](#catalogue-phase-3)):
+
+- `GET /bokku/orders?status&page&limit` — store orders, optional status
+  filter (400 on unknown statuses), paginated.
+- `GET /bokku/orders/:id` — store-scoped detail (foreign ids → 404).
+- `PATCH /bokku/orders/:id/status` — `{ status, reason? }`. Staff edges:
+  `PAID→CONFIRMED→PREPARING→READY_FOR_PICKUP` plus cancellation from any
+  pre-fulfilment state. `CANCELLED` additionally: releases reservations,
+  then drives `CANCELLED→REFUND_PENDING→REFUNDED` via the payment provider
+  (`payment.refunded` audit; a failed refund leaves the order REFUND_PENDING
+  for ops to retry — never faked). Refund statuses can't be set directly.
+  Everything else → 409 `ORDER_INVALID_TRANSITION`.
+
+State machine (`OrderStatePolicy`, the single legal source — arbitrary
+transitions are rejected): PENDING_PAYMENT→PAID→CONFIRMED→PREPARING→
+READY_FOR_PICKUP→(DELIVERY_REQUESTED→DRIVER_ASSIGNED→OUT_FOR_DELIVERY→
+DELIVERED, SYSTEM-only — Phase 9), CANCELLED→REFUND_PENDING→REFUNDED
+(SYSTEM-only). Customers may only cancel before payment. Terminal:
+DELIVERED, CANCELLED, REFUNDED.
+
 ## Security defaults
 
 Helmet headers, CORS (open in dev, origin-locked via `CORS_ORIGINS` in

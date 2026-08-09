@@ -214,6 +214,7 @@ export class CartService {
       productId: product.id,
       name: product.name,
       slug: product.slug,
+      sku: product.sku,
       imageUrl: product.imageUrl,
       unitPrice: product.price,
       quantity: item.quantity,

@@ -16,6 +16,8 @@ export interface PublicCartLine {
   productId: string;
   name: string;
   slug: string;
+  /** Server-side SKU (surfaced for order snapshots). */
+  sku: string;
   imageUrl: string | null;
   /** Current unit price in kobo, read from the products table. */
   unitPrice: number;

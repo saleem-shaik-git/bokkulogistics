@@ -19,6 +19,8 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import type { PaginationQuery } from '../../common/pagination';
 import { AuditService } from '../audit/audit.module';
 import { InventoryService } from '../inventory/inventory.service';
+// NOTE: value import — the ValidationPipe needs the runtime class for @Query()@Body() metatypes.
+import { ListOrdersQuery, TransitionOrderStatusDto } from '../orders/dto/orders.dto';
 import { BokkuService } from './bokku.service';
 import { AdjustInventoryDto, CreateProductDto, UpdateProductDto } from './dto/bokku.dto';
 import { CurrentStore, StoreStaffGuard } from './guards/store-staff.guard';
@@ -72,6 +74,40 @@ export class BokkuCatalogueController {
     @Body() dto: UpdateProductDto,
   ) {
     return this.bokku.updateProduct(store, id, dto, actor);
+  }
+
+  // ── Orders (Phase 7) ────────────────────────────────────────────
+  @Get('orders')
+  @ApiOperation({
+    summary: 'List this store’s orders',
+    description: 'Optional ?status= filter (12-state machine); paginated newest first.',
+  })
+  listOrders(@CurrentStore() store: Store, @Query() query: ListOrdersQuery) {
+    return this.bokku.listOrders(store, query);
+  }
+
+  @Get('orders/:id')
+  @ApiOperation({ summary: 'Order detail (store-scoped — cross-store ids are 404)' })
+  getOrder(@CurrentStore() store: Store, @Param('id', ParseUUIDPipe) id: string) {
+    return this.bokku.getOrder(store, id);
+  }
+
+  @Patch('orders/:id/status')
+  @ApiOperation({
+    summary: 'Transition an order (state-policy validated)',
+    description:
+      'Staff edges: PAID→CONFIRMED, CONFIRMED→PREPARING, PREPARING→READY_FOR_PICKUP and ' +
+      'cancellation. Cancel also runs the refund path: stock released, then ' +
+      'CANCELLED→REFUND_PENDING→REFUNDED as the provider refund lands. Any other edge ' +
+      'returns 409 ORDER_INVALID_TRANSITION.',
+  })
+  transitionOrder(
+    @CurrentStore() store: Store,
+    @CurrentUser() actor: User,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: TransitionOrderStatusDto,
+  ) {
+    return this.bokku.transitionOrder(store, id, dto, actor);
   }
 
   // ── Inventory ───────────────────────────────────────────────────

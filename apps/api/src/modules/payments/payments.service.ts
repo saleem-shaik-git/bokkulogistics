@@ -23,6 +23,7 @@ import type { User } from '@bokku/database';
 import { DRIZZLE_CLIENT, ENV_CONFIG, PAYMENT_PROVIDER } from '../../config/constants';
 import { AuditService } from '../audit/audit.module';
 import { CheckoutService } from '../checkout/checkout.service';
+import { OrdersService } from '../orders/orders.service';
 import { MockPaymentProvider } from '../../integrations/payments/mock-payment.provider';
 import {
   PaymentIntegrationError,
@@ -32,14 +33,25 @@ import { verifyPaystackSignature } from '../../integrations/payments/paystack-si
 import type { InitializePaymentDto, MockCompletePaymentDto } from './dto/payments.dto';
 
 /** Breakdown + order inputs snapshotted at initialize time (consumed in Phase 7). */
-interface PaymentMetadata {
+export interface PaymentMetadataLine {
+  productId: string;
+  name: string;
+  slug: string;
+  sku: string;
+  imageUrl: string | null;
+  unitPrice: number;
+  quantity: number;
+  lineTotal: number;
+}
+
+export interface PaymentMetadata {
   cartId: string;
   storeId: string;
   addressId: string;
   addressSnapshot: Record<string, unknown>;
   quote: Record<string, unknown>;
   breakdown: Record<string, number>;
-  lines: Array<Record<string, unknown>>;
+  lines: PaymentMetadataLine[];
 }
 
 /**
@@ -57,6 +69,7 @@ export class PaymentsService {
     @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider,
     private readonly mockProvider: MockPaymentProvider,
     private readonly checkout: CheckoutService,
+    private readonly orders: OrdersService,
     private readonly audit: AuditService,
   ) {}
 
@@ -148,7 +161,16 @@ export class PaymentsService {
         discount: preview.discount,
         total: preview.total,
       },
-      lines: preview.lines.map((line) => ({ ...line })),
+      lines: preview.lines.map((line) => ({
+        productId: line.productId,
+        name: line.name,
+        slug: line.slug,
+        sku: line.sku,
+        imageUrl: line.imageUrl,
+        unitPrice: line.unitPrice,
+        quantity: line.quantity,
+        lineTotal: line.unitPrice * line.quantity,
+      })),
     };
 
     try {
@@ -311,6 +333,17 @@ export class PaymentsService {
         entityId: payment.id,
         metadata: { reference, amount: payment.amount, channel: verified.channel },
       });
+      // Convert the paid cart into an order right away. Conversion is
+      // idempotent (one order per payment) — on failure the POST /orders
+      // convergence path and retries recreate it; never block the payment.
+      try {
+        await this.orders.createFromPayment(succeeded, 'payment.confirm');
+      } catch (error) {
+        this.logger.error(
+          `Order conversion failed for payment ${succeeded.reference}`,
+          error as Error,
+        );
+      }
     }
     return succeeded ?? payment;
   }
@@ -381,6 +414,73 @@ export class PaymentsService {
     await this.mockProvider.simulateOutcome(dto.reference, dto.outcome, payment.amount);
     const settled = await this.confirmFromProvider(dto.reference);
     return this.toSummary(settled ?? payment);
+  }
+
+  /**
+   * The full payment row for order placement: re-verifies PENDING rows
+   * (webhook-delay convergence) and requires SUCCESS. 409 when unsettled.
+   */
+  async getSettledRowForUser(userId: string, reference: string): Promise<Payment> {
+    const [payment] = await this.database.db
+      .select()
+      .from(payments)
+      .where(and(eq(payments.reference, reference), eq(payments.userId, userId)))
+      .limit(1);
+    if (!payment) {
+      throw new NotFoundException({ code: 'PAYMENT_NOT_FOUND', message: 'Payment was not found' });
+    }
+    if (payment.status === 'PENDING') {
+      const settled = await this.confirmFromProvider(reference);
+      if (settled) return settled;
+    }
+    if (payment.status !== 'SUCCESS') {
+      throw new ConflictException({
+        code: 'PAYMENT_NOT_SETTLED',
+        message: 'The payment has not been confirmed as successful yet',
+      });
+    }
+    return payment;
+  }
+
+  /**
+   * Refund a successful payment through the provider (idempotent — an
+   * already-refunded payment returns as-is). Bokku staff cancellation flow
+   * drives this; provider failures propagate so the order can hold
+   * REFUND_PENDING instead of pretending success.
+   */
+  async refundById(paymentId: string): Promise<Payment> {
+    const [row] = await this.database.db
+      .select()
+      .from(payments)
+      .where(eq(payments.id, paymentId))
+      .limit(1);
+    if (!row) {
+      throw new NotFoundException({ code: 'PAYMENT_NOT_FOUND', message: 'Payment was not found' });
+    }
+    if (row.status === 'REFUNDED') return row;
+    if (row.status !== 'SUCCESS') {
+      throw new ConflictException({
+        code: 'PAYMENT_NOT_REFUNDABLE',
+        message: `Only successful payments can be refunded (status is ${row.status})`,
+      });
+    }
+
+    await this.provider.refundPayment({ reference: row.reference, amount: row.amount });
+
+    const [updated] = await this.database.db
+      .update(payments)
+      .set({ status: 'REFUNDED', updatedAt: new Date() })
+      .where(and(eq(payments.id, row.id), eq(payments.status, 'SUCCESS')))
+      .returning();
+    if (updated) {
+      await this.audit.record({
+        action: 'payment.refunded',
+        entityType: 'payment',
+        entityId: row.id,
+        metadata: { reference: row.reference, amount: row.amount, provider: row.provider },
+      });
+    }
+    return updated ?? row;
   }
 
   // ── Helpers ─────────────────────────────────────────────────────

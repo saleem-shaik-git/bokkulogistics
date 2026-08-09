@@ -50,7 +50,7 @@ modules/payments ──┘         ▲
 | 4 | Cart | ✅ complete |
 | 5 | Checkout & pricing engine | ✅ complete |
 | 6 | Payments (Paystack + mock) | ✅ complete |
-| 7 | Orders + state machine | ⬜ |
+| 7 | Orders + state machine | ✅ complete |
 | 8 | Bokku operations dashboard | ⬜ |
 | 9 | Delivery adapters | ⬜ |
 | 10 | Admin | ⬜ |

@@ -18,6 +18,7 @@ export interface CheckoutPreviewLine {
   productId: string;
   name: string;
   slug: string;
+  sku: string;
   imageUrl: string | null;
   unitPrice: number;
   quantity: number;

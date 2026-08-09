@@ -5,10 +5,18 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq, gte, sql } from 'drizzle-orm';
 import { inventory, products, type DatabaseConnection } from '@bokku/database';
 
 import { DRIZZLE_CLIENT } from '../../config/constants';
+
+/** A drizzle transaction (what `db.transaction(async (tx) => …)` yields). */
+export type DbTransaction = Parameters<Parameters<DatabaseConnection['db']['transaction']>[0]>[0];
+
+export interface ReservationLine {
+  productId: string;
+  quantity: number;
+}
 
 export interface InventoryRow {
   productId: string;
@@ -66,6 +74,100 @@ export class InventoryService {
       sellable: row.quantityOnHand - row.reservedQuantity,
       lowStock: row.quantityOnHand <= row.lowStockThreshold,
     }));
+  }
+
+  /**
+   * Reserve stock for an order's lines (payment captured / order creation).
+   * Each line is a single conditional UPDATE guarded by
+   * `quantity_on_hand - reserved_quantity - qty >= 0` — concurrent orders
+   * can never oversell, and sellable stock can never go negative.
+   * Runs inside the caller's transaction so failures roll back atomically.
+   */
+  async reserve(lines: ReservationLine[], storeId: string, tx: DbTransaction): Promise<void> {
+    for (const line of lines) {
+      const updated = await tx
+        .update(inventory)
+        .set({
+          reservedQuantity: sql`${inventory.reservedQuantity} + ${line.quantity}`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(inventory.productId, line.productId),
+            eq(inventory.storeId, storeId),
+            gte(inventory.quantityOnHand, sql`${inventory.reservedQuantity} + ${line.quantity}`),
+          ),
+        )
+        .returning({ id: inventory.id });
+      if (updated.length === 0) {
+        throw new ConflictException({
+          code: 'INSUFFICIENT_STOCK',
+          message: `Not enough stock to reserve ${line.quantity} unit(s) — another order may have taken them`,
+        });
+      }
+    }
+  }
+
+  /** Release a reservation (order cancellation before fulfillment). */
+  async releaseReservation(
+    lines: ReservationLine[],
+    storeId: string,
+    tx: DbTransaction,
+  ): Promise<void> {
+    for (const line of lines) {
+      const updated = await tx
+        .update(inventory)
+        .set({
+          reservedQuantity: sql`${inventory.reservedQuantity} - ${line.quantity}`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(inventory.productId, line.productId),
+            eq(inventory.storeId, storeId),
+            gte(inventory.reservedQuantity, line.quantity),
+          ),
+        )
+        .returning({ id: inventory.id });
+      if (updated.length === 0) {
+        throw new ConflictException({
+          code: 'RESERVATION_INCONSISTENT',
+          message: 'Reserved stock bookkeeping is inconsistent for this order',
+        });
+      }
+    }
+  }
+
+  /** Settle at fulfillment: on-hand AND reserved both drop by the line quantity. */
+  async settleReservation(
+    lines: ReservationLine[],
+    storeId: string,
+    tx: DbTransaction,
+  ): Promise<void> {
+    for (const line of lines) {
+      const updated = await tx
+        .update(inventory)
+        .set({
+          quantityOnHand: sql`${inventory.quantityOnHand} - ${line.quantity}`,
+          reservedQuantity: sql`${inventory.reservedQuantity} - ${line.quantity}`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(inventory.productId, line.productId),
+            eq(inventory.storeId, storeId),
+            gte(inventory.quantityOnHand, line.quantity),
+            gte(inventory.reservedQuantity, line.quantity),
+          ),
+        )
+        .returning({ id: inventory.id });
+      if (updated.length === 0) {
+        throw new ConflictException({
+          code: 'RESERVATION_INCONSISTENT',
+          message: 'Reserved stock bookkeeping is inconsistent for this order',
+        });
+      }
+    }
   }
 
   async adjust(productId: string, input: InventoryAdjustment): Promise<AdjustmentResult> {

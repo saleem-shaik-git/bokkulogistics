@@ -10,3 +10,4 @@ export * from './store-staff';
 export * from './carts';
 export * from './addresses';
 export * from './payments';
+export * from './orders';

@@ -1,15 +1,16 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { and, count, desc, eq, isNull } from 'drizzle-orm';
 import {
   categories,
   inventory,
+  payments,
   products,
   type DatabaseConnection,
   type Product,
   type Store,
   type User,
 } from '@bokku/database';
-import type { Paginated } from '@bokku/shared';
+import type { Paginated, PublicOrderDetail, PublicOrderSummary } from '@bokku/shared';
 
 import { DRIZZLE_CLIENT } from '../../config/constants';
 import { AuditService } from '../audit/audit.module';
@@ -19,14 +20,21 @@ import {
   type PaginationQuery,
 } from '../../common/pagination';
 import { slugify, withSuffix } from '../../common/utils/slugify';
+import { OrdersService } from '../orders/orders.service';
+import type { ListOrdersQuery, TransitionOrderStatusDto } from '../orders/dto/orders.dto';
+import { PaymentsService } from '../payments/payments.service';
 import type { CreateProductDto, UpdateProductDto } from './dto/bokku.dto';
 
-/** Catalogue management for the Bokku operations dashboard. */
+/** Catalogue + order management for the Bokku operations dashboard. */
 @Injectable()
 export class BokkuService {
+  private readonly logger = new Logger(BokkuService.name);
+
   constructor(
     @Inject(DRIZZLE_CLIENT) private readonly database: DatabaseConnection,
     private readonly audit: AuditService,
+    private readonly orders: OrdersService,
+    private readonly paymentsService: PaymentsService,
   ) {}
 
   async listProducts(store: Store, query: PaginationQuery): Promise<Paginated<Product>> {
@@ -197,5 +205,63 @@ export class BokkuService {
       current = (current as { cause?: unknown }).cause;
     }
     return false;
+  }
+
+  // ── Order operations (Phase 7) ──────────────────────────────────
+
+  listOrders(store: Store, query: ListOrdersQuery): Promise<Paginated<PublicOrderSummary>> {
+    return this.orders.listForStore(store.id, query);
+  }
+
+  getOrder(store: Store, orderId: string): Promise<PublicOrderDetail> {
+    return this.orders.getForStore(store.id, orderId);
+  }
+
+  /**
+   * Staff order operations. Normal progressions go straight through the
+   * state policy. Cancellation additionally runs the refund path:
+   * release stock (inside the transition) → REFUND_PENDING → provider
+   * refund → REFUNDED. A failed refund leaves the order REFUND_PENDING
+   * (never silently "refunded") for ops to retry.
+   */
+  async transitionOrder(
+    store: Store,
+    orderId: string,
+    dto: TransitionOrderStatusDto,
+    actor: User,
+  ): Promise<PublicOrderDetail> {
+    if (dto.status !== 'CANCELLED') {
+      if (dto.status === 'REFUNDED' || dto.status === 'REFUND_PENDING') {
+        throw new ConflictException({
+          code: 'ORDER_INVALID_TRANSITION',
+          message: 'Refund statuses are driven by the refund flow, not set directly',
+        });
+      }
+      return this.orders.transitionForStore(store.id, orderId, dto.status, dto.reason, actor);
+    }
+
+    await this.orders.transitionForStore(store.id, orderId, 'CANCELLED', dto.reason, actor);
+
+    // Refund path for orders with a successful payment.
+    const row = await this.orders.getRowById(orderId);
+    const [payment] = await this.database.db
+      .select()
+      .from(payments)
+      .where(eq(payments.id, row.paymentId))
+      .limit(1);
+
+    if (payment?.status === 'SUCCESS') {
+      await this.orders.transitionSystem(orderId, 'REFUND_PENDING', { actor: actor.id });
+      try {
+        await this.paymentsService.refundById(payment.id);
+        await this.orders.transitionSystem(orderId, 'REFUNDED', { reference: payment.reference });
+      } catch (error) {
+        this.logger.error(
+          `Refund failed for order ${row.orderNumber} (${payment.reference}) — stays REFUND_PENDING`,
+          error as Error,
+        );
+      }
+    }
+    return this.orders.getForStore(store.id, orderId);
   }
 }

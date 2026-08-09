@@ -2,11 +2,12 @@
 
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 
 import { ApiError } from '@/lib/api-client';
+import { usePlaceOrder } from '@/hooks/use-orders';
 import { fetchPayment } from '@/lib/payments-api';
 import { formatKobo } from '@/lib/money';
 import { useAuthStore } from '@/stores/auth-store';
@@ -56,6 +57,21 @@ function PaymentResultContent() {
 
   const payment = query.data;
 
+  // Payment confirmed ⇒ place the order exactly once. Server-side the
+  // conversion is idempotent (one order per payment), and the payment
+  // confirmation itself already auto-converted, so this normally just
+  // fetches the freshly created order.
+  const placeOrder = usePlaceOrder();
+  const placeOrderRef = useRef(placeOrder.mutate);
+  placeOrderRef.current = placeOrder.mutate;
+  const [placedFor, setPlacedFor] = useState<string | null>(null);
+  useEffect(() => {
+    if (payment?.status === 'SUCCESS' && placedFor !== payment.reference) {
+      setPlacedFor(payment.reference);
+      placeOrderRef.current(payment.reference);
+    }
+  }, [payment, placedFor]);
+
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col items-stretch justify-center gap-6 px-6 py-10">
       {query.isLoading || !hydrated ? (
@@ -70,14 +86,51 @@ function PaymentResultContent() {
           <ResultActions primary={{ href: '/checkout', label: 'Back to checkout' }} />
         </ResultPanel>
       ) : payment?.status === 'SUCCESS' ? (
-        <ResultPanel tone="success" title="Payment received">
-          <p>
-            {formatKobo(payment.amount)} confirmed
-            {payment.channel ? ` via ${payment.channel}` : ''}. Order placement and live tracking
-            arrive with the next update — your cart is safely held as paid in the meantime.
-          </p>
-          <p className="break-all text-xs text-slate-400">{payment.reference}</p>
-          <ResultActions primary={{ href: '/', label: 'Back to shop' }} />
+        <ResultPanel tone="success" title="Order placed">
+          {placeOrder.data ? (
+            <>
+              <p>
+                {formatKobo(placeOrder.data.total)} confirmed
+                {payment.channel ? ` via ${payment.channel}` : ''} — order{' '}
+                <span className="font-semibold text-slate-800">{placeOrder.data.orderNumber}</span>{' '}
+                is with Bokku now.
+              </p>
+              <div className="mt-2 flex flex-col items-center gap-2">
+                <ResultActions
+                  primary={{ href: `/orders/${placeOrder.data.id}`, label: 'Track your order' }}
+                />
+                <Link href="/" className="text-sm font-medium text-brand-600 hover:underline">
+                  Back to shop
+                </Link>
+              </div>
+            </>
+          ) : placeOrder.isError ? (
+            <>
+              <p>
+                {formatKobo(payment.amount)} confirmed — but finishing your order needs another
+                attempt.
+              </p>
+              <p className="text-xs text-red-600">
+                {placeOrder.error instanceof ApiError
+                  ? placeOrder.error.message
+                  : 'Something went wrong while placing the order.'}
+              </p>
+              <button
+                type="button"
+                onClick={() => placeOrder.mutate(payment.reference)}
+                disabled={placeOrder.isPending}
+                className="mt-1 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+              >
+                {placeOrder.isPending ? 'Placing your order…' : 'Retry placing the order'}
+              </button>
+              <p className="break-all text-xs text-slate-400">{payment.reference}</p>
+            </>
+          ) : (
+            <p>
+              {formatKobo(payment.amount)} confirmed
+              {payment.channel ? ` via ${payment.channel}` : ''}. Placing your order…
+            </p>
+          )}
         </ResultPanel>
       ) : payment?.status === 'FAILED' ? (
         <ResultPanel tone="error" title="Payment failed">

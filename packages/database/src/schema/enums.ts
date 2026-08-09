@@ -27,3 +27,23 @@ export const paymentStatusEnum = pgEnum('payment_status', [
   'ABANDONED',
   'REFUNDED',
 ]);
+
+/**
+ * The order state machine (spec): transitions are validated by
+ * apps/api src/modules/orders/order-state.policy.ts — never set statuses
+ * without going through the policy.
+ */
+export const orderStatusEnum = pgEnum('order_status', [
+  'PENDING_PAYMENT',
+  'PAID',
+  'CONFIRMED',
+  'PREPARING',
+  'READY_FOR_PICKUP',
+  'DELIVERY_REQUESTED',
+  'DRIVER_ASSIGNED',
+  'OUT_FOR_DELIVERY',
+  'DELIVERED',
+  'CANCELLED',
+  'REFUND_PENDING',
+  'REFUNDED',
+]);

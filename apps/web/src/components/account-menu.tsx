@@ -54,8 +54,12 @@ export function AccountMenu() {
     <div className="flex items-center gap-3 text-sm">
       <div className="text-right">
         <p className="font-medium text-slate-800">Hi, {user.firstName}</p>
-        <p className="text-xs capitalize text-slate-400">
-          {user.role.toLowerCase().replace('_', ' ')}
+        <p className="text-xs text-slate-400">
+          <span className="capitalize">{user.role.toLowerCase().replace('_', ' ')}</span>
+          {' · '}
+          <Link href="/orders" className="font-medium text-brand-600 hover:underline">
+            My orders
+          </Link>
         </p>
       </div>
       <button

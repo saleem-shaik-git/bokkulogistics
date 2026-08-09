@@ -89,6 +89,7 @@ export class CheckoutService {
         productId: line.productId,
         name: line.name,
         slug: line.slug,
+        sku: line.sku,
         imageUrl: line.imageUrl,
         unitPrice: line.unitPrice,
         quantity: line.quantity,

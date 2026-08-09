@@ -270,6 +270,28 @@ describe('confirmation via the mock checkout', () => {
     await call('/payments/mock/complete', {
       body: { reference: payment.reference, outcome: 'success' },
     });
+    // Phase 7: the settled payment auto-converts into an order and CONSUMES
+    // the cart — there is simply no cart left to pay for again (the
+    // CART_ALREADY_PAID guard still protects the conversion-failed path,
+    // where a paid-but-unconverted cart survives; see orders spec).
+    const again = await call('/payments/initialize', { token: aliceToken, body: { addressId } });
+    expect(again.status).toBe(400);
+    expect(errorCode(again)).toBe('CART_EMPTY');
+  });
+
+  it('keeps CART_ALREADY_PAID protection when conversion could not consume the cart', async () => {
+    // Simulate a paid-but-unconverted cart: zero out stock AFTER checkout so
+    // the auto-conversion rolls back and the (still full) cart survives.
+    const payment = await initialize();
+    await sql`UPDATE inventory SET quantity_on_hand = 0 WHERE product_id = ${productA}`;
+    const completed = await call<PaymentSummary>('/payments/mock/complete', {
+      body: { reference: payment.reference, outcome: 'success' },
+    });
+    expect(completed.body.data.status).toBe('SUCCESS'); // money settled regardless
+
+    // Stock is available again (preview passes), so the ALREADY_PAID guard
+    // is exactly what stops the double charge for the same cart.
+    await sql`UPDATE inventory SET quantity_on_hand = 10 WHERE product_id = ${productA}`;
     const again = await call('/payments/initialize', { token: aliceToken, body: { addressId } });
     expect(again.status).toBe(409);
     expect(errorCode(again)).toBe('CART_ALREADY_PAID');
