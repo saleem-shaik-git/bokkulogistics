@@ -23,6 +23,7 @@ import {
 } from '@bokku/database';
 import type { EnvConfig } from '@bokku/config';
 import {
+  ORDER_STATUS_LABELS,
   ORDER_STATUSES,
   type OrderDeliveryQuote,
   type OrderStatus,
@@ -41,6 +42,7 @@ import {
 } from '../../common/pagination';
 import { AuditService } from '../audit/audit.module';
 import { InventoryService, type DbTransaction } from '../inventory/inventory.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { OrderStatePolicy } from './order-state.policy';
 import type { PaymentMetadata } from '../payments/payments.service';
 
@@ -73,6 +75,7 @@ export class OrdersService {
     @Inject(ENV_CONFIG) private readonly env: EnvConfig,
     private readonly inventory: InventoryService,
     private readonly audit: AuditService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   // ── Conversion (payment → order) ────────────────────────────────
@@ -169,6 +172,21 @@ export class OrdersService {
           });
           return paid ?? order;
         });
+
+        // Notify after commit — customer + the store's staff queue.
+        const orderNumber = order.orderNumber;
+        await this.notifications.emit(order.userId, {
+          type: 'order.paid',
+          title: 'Payment confirmed',
+          body: `Order ${orderNumber} is paid — the store is getting it ready.`,
+          data: { orderId: order.id, orderNumber, total: order.total },
+        });
+        await this.notifications.emitToStoreStaff(order.storeId, {
+          type: 'store.order_new',
+          title: 'New order',
+          body: `${orderNumber} just came in — time to pack it.`,
+          data: { orderId: order.id, orderNumber, total: order.total },
+        });
         return { order, created: true };
       } catch (error) {
         if (this.pgConstraint(error, 'orders_number_unique') && attempt < 2) continue;
@@ -247,6 +265,12 @@ export class OrdersService {
         metadata: { by: 'CUSTOMER', from: order.status },
       });
       return row ?? order;
+    });
+    await this.notifications.emit(order.userId, {
+      type: 'order.cancelled',
+      title: 'Order cancelled',
+      body: `Order ${order.orderNumber} was cancelled at your request.`,
+      data: { orderId: order.id, orderNumber: order.orderNumber },
     });
     return this.toDetail(updated);
   }
@@ -367,6 +391,23 @@ export class OrdersService {
       });
       return row ?? order;
     });
+
+    // Tell the customer about staff progress (labels are customer-facing).
+    if (to === 'CANCELLED') {
+      await this.notifications.emit(order.userId, {
+        type: 'order.cancelled',
+        title: 'Order cancelled',
+        body: `Order ${order.orderNumber} was cancelled${reason ? ` — ${reason}` : ''}. Any payment is refunded automatically.`,
+        data: { orderId: order.id, orderNumber: order.orderNumber },
+      });
+    } else {
+      await this.notifications.emit(order.userId, {
+        type: 'order.status_changed',
+        title: ORDER_STATUS_LABELS[to],
+        body: `Order ${order.orderNumber} is ${ORDER_STATUS_LABELS[to].toLowerCase()}.`,
+        data: { orderId: order.id, orderNumber: order.orderNumber, status: to },
+      });
+    }
     return this.toDetail(updated);
   }
 
@@ -394,6 +435,14 @@ export class OrdersService {
       entityId: order.id,
       metadata: { from: order.status, to, actor: 'SYSTEM', ...metadata },
     });
+    if (to === 'REFUNDED') {
+      await this.notifications.emit(order.userId, {
+        type: 'payment.refunded',
+        title: 'Refund completed',
+        body: `The refund for order ${order.orderNumber} has been completed.`,
+        data: { orderId: order.id, orderNumber: order.orderNumber, ...metadata },
+      });
+    }
     return this.toDetail(updated ?? order);
   }
 

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { DeliveryModule } from '../../integrations/delivery/delivery.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { OrdersModule } from '../orders/orders.module';
 import { DeliveriesController } from './deliveries.controller';
 import { DeliveriesService } from './deliveries.service';
@@ -10,7 +11,7 @@ import { DeliveriesService } from './deliveries.service';
  * and the DeliveryProvider interface (spec: no direct order→vendor access).
  */
 @Module({
-  imports: [DeliveryModule, OrdersModule],
+  imports: [DeliveryModule, OrdersModule, NotificationsModule],
   controllers: [DeliveriesController],
   providers: [DeliveriesService],
   exports: [DeliveriesService],

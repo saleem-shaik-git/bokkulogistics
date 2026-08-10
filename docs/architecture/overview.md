@@ -54,5 +54,5 @@ modules/payments ──┘         ▲
 | 8 | Bokku operations dashboard | ✅ complete |
 | 9 | Delivery adapters | ✅ complete |
 | 10 | Admin | ✅ complete |
-| 11 | Notifications | ⬜ |
+| 11 | Notifications | ✅ complete |
 | 12 | Production hardening | ⬜ |

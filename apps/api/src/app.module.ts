@@ -20,6 +20,7 @@ import { PaymentsModule } from './modules/payments/payments.module';
 import { DeliveriesModule } from './modules/deliveries/deliveries.module';
 import { BokkuModule } from './modules/bokku/bokku.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { AdminModule } from './modules/admin/admin.module';
     DeliveriesModule,
     BokkuModule,
     AdminModule,
+    NotificationsModule,
   ],
   providers: [
     // Order matters: authenticate first, authorize second.

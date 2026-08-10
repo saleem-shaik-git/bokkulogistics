@@ -335,6 +335,52 @@ oversight, and the only mutations are user role/status changes.
   Platform admins land here after login; the account menu links both
   consoles.
 
+## Notifications (Phase 11)
+
+In-app feed only — delivery is **polling-first** (the web bell polls the
+unread count; no websockets in the MVP), and the email/SMS toggles are
+forward placeholders with no real vendor sends. Every route requires auth
+and is owner-scoped (foreign ids 404). Emission never blocks the business
+path: failures are logged with the request id and swallowed, like the
+audit trail.
+
+- `GET /notifications?unread=&page&limit=` — my feed, newest first;
+  `unread=true` filters to unread only. Each row carries `type`, `title`,
+  `body`, free-form `data` (deep-link payload — currently `orderId`),
+  `readAt`, `createdAt`.
+- `GET /notifications/unread-count` — cheap `{ unread }` ping for the
+  header badge.
+- `PATCH /notifications/:id/read` — mark one read; idempotent (repeated
+  calls keep the original timestamp); others' ids → 404
+  `NOTIFICATION_NOT_FOUND`.
+- `POST /notifications/read-all` — drains the feed, returns `{ updated }`.
+- `GET /notifications/preferences` — my toggles; the row materializes
+  lazily with defaults (order/payment/delivery `true`, marketing/email/sms
+  `false`).
+- `PATCH /notifications/preferences` — merge-patch any subset of the six
+  booleans.
+
+Emission map (who sees what):
+
+| Event | Audience | Preference gate |
+| ----------------- | ------------------------------- | --------------- |
+| `order.paid` | customer | `orderUpdates` |
+| `store.order_new` | ACTIVE store staff of the store | `orderUpdates` (per member) |
+| `order.status_changed` | customer | `orderUpdates` |
+| `order.cancelled` | customer (actor or staff cancel; body carries the reason) | `orderUpdates` |
+| `payment.refunded` | customer (REFUNDED transition) | `paymentUpdates` |
+| `delivery.dispatched` | customer | `deliveryUpdates` |
+| `delivery.driver_assigned` | customer (body names the rider) | `deliveryUpdates` |
+| `delivery.out_for_delivery` | customer | `deliveryUpdates` |
+| `delivery.delivered` | customer | `deliveryUpdates` |
+
+The staff fan-out fans out to ACTIVE `store_staff` members only — being a
+PLATFORM_ADMIN is not a substitute for membership. Web: bell with unread
+badge in the storefront/orders headers and a `/notifications` page (feed
+with unread highlighting, all/unread filter, mark-read on tap with order
+deep-links, "mark all read", and the preferences panel with email/SMS
+switches disabled as "coming soon").
+
 ## Security defaults
 
 Helmet headers, CORS (open in dev, origin-locked via `CORS_ORIGINS` in

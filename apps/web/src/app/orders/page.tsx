@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { CartButton } from '@/components/cart-button';
+import { NotificationBell } from '@/components/notification-bell';
 import { StatusChip } from '@/components/status-chip';
 import { useOrders } from '@/hooks/use-orders';
 import { formatKobo } from '@/lib/money';
@@ -41,7 +42,10 @@ export default function OrdersPage() {
           </Link>
           <h1 className="mt-1 text-2xl font-bold tracking-tight">My orders</h1>
         </div>
-        <CartButton />
+        <div className="flex items-center gap-2">
+          <NotificationBell />
+          <CartButton />
+        </div>
       </header>
 
       {ordersQuery.isLoading ? (

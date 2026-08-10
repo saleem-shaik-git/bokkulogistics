@@ -25,6 +25,7 @@ import {
   type DeliveryProvider,
   type DeliveryTracking,
 } from '../../integrations/delivery/delivery-provider.interface';
+import { NotificationsService } from '../notifications/notifications.service';
 import { OrderStatePolicy } from '../orders/order-state.policy';
 import { OrdersService } from '../orders/orders.service';
 
@@ -66,6 +67,7 @@ export class DeliveriesService {
     @Inject(DELIVERY_PROVIDER) private readonly provider: DeliveryProvider,
     private readonly orders: OrdersService,
     private readonly audit: AuditService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   // ── Dispatch ────────────────────────────────────────────────────
@@ -169,6 +171,12 @@ export class DeliveriesService {
           entityId: order.id,
           metadata: { orderNumber: order.orderNumber, provider: this.provider.kind, externalId },
         });
+        await this.notifications.emit(order.userId, {
+          type: 'delivery.dispatched',
+          title: 'Courier requested',
+          body: `We're finding a rider for order ${order.orderNumber}.`,
+          data: { orderId: order.id, orderNumber: order.orderNumber, externalId },
+        });
         return row!;
       } catch (error) {
         if (attempt === 0 && this.pgConstraint(error, 'deliveries_order_unique')) {
@@ -186,6 +194,34 @@ export class DeliveriesService {
       code: 'DELIVERY_DISPATCH_FAILED',
       message: 'The delivery could not be recorded — retry dispatching',
     });
+  }
+
+  /** Customer-facing courier-stage notifications (DRIVER_ASSIGNED keeps the courier name). */
+  private async emitStageNotification(
+    step: OrderStatus,
+    order: Order,
+    courier: DeliveryTracking['courier'],
+  ): Promise<void> {
+    if (step === 'DRIVER_ASSIGNED') {
+      const who = courier?.name ?? 'A rider';
+      await this.notifications.emit(order.userId, {
+        type: 'delivery.driver_assigned',
+        title: 'Rider assigned',
+        body: `${who} is heading to the store for order ${order.orderNumber}.`,
+        data: {
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          ...(courier ? { courier } : {}),
+        },
+      });
+    } else if (step === 'OUT_FOR_DELIVERY') {
+      await this.notifications.emit(order.userId, {
+        type: 'delivery.out_for_delivery',
+        title: 'On the way',
+        body: `Order ${order.orderNumber} is on its way to you.`,
+        data: { orderId: order.id, orderNumber: order.orderNumber },
+      });
+    }
   }
 
   // ── Sync (polling-first progression) ────────────────────────────
@@ -243,12 +279,19 @@ export class DeliveriesService {
         const step = ORDER_CHAIN[i]!;
         if (step === 'DELIVERED') {
           await this.orders.completeDelivery(orderId); // settles the reservation
+          await this.notifications.emit(order.userId, {
+            type: 'delivery.delivered',
+            title: 'Delivered',
+            body: `Order ${order.orderNumber} was delivered. Enjoy!`,
+            data: { orderId, orderNumber: order.orderNumber },
+          });
         } else {
           OrderStatePolicy.assertTransition('SYSTEM', ORDER_CHAIN[i - 1] as OrderStatus, step);
           await this.orders.transitionSystem(orderId, step, {
             provider: this.provider.kind,
             providerStatus: status.status,
           });
+          await this.emitStageNotification(step, order, courier);
         }
       }
     }

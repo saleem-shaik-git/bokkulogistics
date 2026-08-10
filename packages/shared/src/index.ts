@@ -78,3 +78,4 @@ export * from './orders';
 export * from './delivery';
 export * from './bokku';
 export * from './admin';
+export * from './notifications';

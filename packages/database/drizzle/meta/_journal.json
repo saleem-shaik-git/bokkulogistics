@@ -57,6 +57,13 @@
       "when": 1786321271530,
       "tag": "0007_motionless_supreme_intelligence",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1786326479474,
+      "tag": "0008_notify_feed",
+      "breakpoints": true
     }
   ]
 }
