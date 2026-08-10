@@ -12,6 +12,7 @@ import type { PublicUser } from '@bokku/shared';
 
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
+import { RateLimit } from '../rate-limit/rate-limit.decorator';
 import { AuthService, type RequestMeta } from './auth.service';
 import {
   ForgotPasswordDto,
@@ -24,6 +25,10 @@ import {
 } from './dto/auth.dto';
 
 @ApiTags('Authentication')
+// The whole surface is credential-bearing: apply the strict 'auth'
+// bucket (default 20/min per client; env-tunable). Failing logins still
+// count — that's the point of limiting offline guessing.
+@RateLimit({ bucket: 'auth' })
 @Controller('auth')
 export class AuthController {
   constructor(private readonly auth: AuthService) {}

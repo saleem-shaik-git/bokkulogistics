@@ -48,10 +48,24 @@ export class AllExceptionsFilter implements ExceptionFilter {
         code = body.code ?? this.toErrorCode(body.error ?? exception.name ?? 'HTTP_ERROR');
       }
     } else if (exception instanceof Error) {
-      this.logger.error(
-        `Unhandled error [${req.id ?? 'no-request-id'}]: ${exception.message}`,
-        exception.stack,
-      );
+      // Body-parser / stream errors are NOT HttpExceptions — they carry
+      // `.status`/`.type` (e.g. entity.too.large, entity.parse.failed).
+      // Map them to honest 4xx instead of a misleading 500.
+      const statusFromParser = this.bodyParserStatus(exception);
+      if (statusFromParser) {
+        status = statusFromParser;
+        code =
+          statusFromParser === HttpStatus.PAYLOAD_TOO_LARGE ? 'PAYLOAD_TOO_LARGE' : 'BAD_REQUEST';
+        message =
+          statusFromParser === HttpStatus.PAYLOAD_TOO_LARGE
+            ? 'Request body too large'
+            : 'Invalid request body';
+      } else {
+        this.logger.error(
+          `Unhandled error [${req.id ?? 'no-request-id'}]: ${exception.message}`,
+          exception.stack,
+        );
+      }
     }
 
     const payload: ApiFailure = {
@@ -70,5 +84,18 @@ export class AllExceptionsFilter implements ExceptionFilter {
       .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
       .replace(/[\s-]+/g, '_')
       .toUpperCase();
+  }
+
+  /**
+   * Body-parser failures carry `type: 'entity.*'` plus a numeric status
+   * (413 entity.too.large, 400 entity.parse.failed). Returns the status
+   * when the shape matches, otherwise null (a real 500 candidate).
+   */
+  private bodyParserStatus(exception: Error): number | null {
+    const candidate = exception as Error & { status?: number; statusCode?: number; type?: string };
+    if (typeof candidate.type !== 'string' || !candidate.type.startsWith('entity.')) return null;
+    const status = candidate.status ?? candidate.statusCode;
+    if (typeof status !== 'number' || status < 400 || status >= 500) return null;
+    return status;
   }
 }

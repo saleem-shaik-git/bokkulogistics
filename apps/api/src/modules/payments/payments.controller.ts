@@ -12,6 +12,7 @@ import type { Request } from 'express';
 
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
+import { RateLimit } from '../rate-limit/rate-limit.decorator';
 import {
   InitializePaymentDto,
   MockCompletePaymentDto,
@@ -30,6 +31,7 @@ export class PaymentsController {
   constructor(private readonly payments: PaymentsService) {}
 
   @Post('initialize')
+  @RateLimit({ bucket: 'sensitive' })
   @ApiBearerAuth('access-token')
   @ApiOperation({
     summary: 'Initialize a payment for the current cart',
@@ -76,6 +78,7 @@ export class PaymentsController {
 
   @Public()
   @Post('mock/complete')
+  @RateLimit({ bucket: 'sensitive' })
   @ApiExcludeEndpoint()
   mockComplete(@Body() dto: MockCompletePaymentDto): Promise<PaymentSummary> {
     return this.payments.mockComplete(dto);

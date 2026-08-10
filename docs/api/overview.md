@@ -381,10 +381,41 @@ with unread highlighting, all/unread filter, mark-read on tap with order
 deep-links, "mark all read", and the preferences panel with email/SMS
 switches disabled as "coming soon").
 
+## Production hardening (Phase 12)
+
+- **Rate limiting** — Redis-backed fixed windows enforced by a global
+  guard that runs after auth, so identity is the **user id** for
+  authenticated calls and the **client IP** for anonymous ones (correct
+  behind a load balancer thanks to `trust proxy = 1`). Buckets, all
+  env-tunable: `default` 300/min for everything untagged, `auth`
+  20/min for the entire `/auth` surface (failing logins count — that's
+  the point), `sensitive` 60/min for checkout preview, payment
+  initialize, and mock payment completion. Every response carries
+  `X-RateLimit-Limit/Remaining/Reset`; over-limit calls get a 429
+  envelope with code `RATE_LIMITED` plus `Retry-After`. The limiter
+  **fails open** when Redis is unreachable (logged) — it must never
+  take the storefront down. Off by default only under `NODE_ENV=test`
+  (a dedicated integration spec opts in with low limits).
+- **Health probes** — `/health` (legacy, always 200, status in-body),
+  `/health/live` (dependency-free liveness: a Postgres/Redis outage
+  never restarts healthy pods), `/health/ready` (same probes, but
+  **503 when degraded** so LBs drain the instance).
+- **Error plumbing** — body-parser failures (oversized JSON > 100kb,
+  malformed JSON) map to honest `413 PAYLOAD_TOO_LARGE` /
+  `400 BAD_REQUEST` envelopes instead of a generic 500.
+- **Swagger gating** — `/api/docs` is opt-in in production
+  (`SWAGGER_ENABLED=true`), always on elsewhere.
+- **Launcher** — `main.ts` and the integration tests share one
+  `configureApp()` so prefix/pipe behavior can't drift between boots.
+- **Web headers** — `X-Powered-By` removed; HSTS, `Permissions-Policy`
+  (`camera=(), microphone=(), geolocation=()`), and DNS prefetch
+  control added alongside the existing `nosniff`, `DENY`, referrer policy.
+
 ## Security defaults
 
 Helmet headers, CORS (open in dev, origin-locked via `CORS_ORIGINS` in
-production), global `ValidationPipe` (whitelist + transform), secrets never
-returned in responses or logs (query parameters containing
-`password|token|secret|authorization|cookie` are redacted from logs).
-Rate limiting arrives with Phase 12.
+production), global `ValidationPipe` (whitelist + forbid + transform),
+secrets never returned in responses or logs (query parameters containing
+`password|token|secret|authorization|cookie` are redacted from logs),
+rate limiting as described above, and graceful shutdown hooks that close
+PostgreSQL/Redis connections on SIGTERM.

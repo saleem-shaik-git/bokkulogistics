@@ -39,13 +39,17 @@ export const PAGINATION_MAX_LIMIT = 100;
 export const PAGINATION_DEFAULT_PAGE = 1;
 export const PAGINATION_DEFAULT_LIMIT = 20;
 
-/** Health check payload shape (`GET /api/v1/health`). */
+/**
+ * Health payload shape (`GET /api/v1/health`). The `database`/`redis`
+ * entries are only present on readiness-style probes; `GET /health/live`
+ * reports the process alone and omits them rather than guess.
+ */
 export interface HealthCheckResult {
   status: 'ok' | 'error';
   services: {
     api: 'up' | 'down';
-    database: 'up' | 'down';
-    redis: 'up' | 'down';
+    database?: 'up' | 'down';
+    redis?: 'up' | 'down';
   };
 }
 

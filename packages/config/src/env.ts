@@ -39,6 +39,28 @@ export const envSchema = z
     SMTP_PASSWORD: z.string().optional(),
 
     SENTRY_DSN: z.string().optional(),
+
+    // ── Phase 12: production hardening ───────────────────────────
+    // NOTE: booleans use enum+transform — z.coerce.boolean() treats the
+    // literal string 'false' as true.
+    /** CORS allowlist in production (comma-separated; open in dev). */
+    CORS_ORIGINS: z.string().optional(),
+    /** Swagger UI. Defaults: on everywhere except production. */
+    SWAGGER_ENABLED: z
+      .enum(['true', 'false'])
+      .transform((v) => v === 'true')
+      .optional(),
+    /** Redis-backed rate limiting. Defaults: on except NODE_ENV=test. */
+    RATE_LIMIT_ENABLED: z
+      .enum(['true', 'false'])
+      .transform((v) => v === 'true')
+      .optional(),
+    /** Default bucket: requests per minute per user (or per IP when anonymous). */
+    RATE_LIMIT_DEFAULT_PER_MINUTE: z.coerce.number().int().positive().max(100_000).default(300),
+    /** Auth endpoints (register/login/refresh/password reset) per minute per IP. */
+    RATE_LIMIT_AUTH_PER_MINUTE: z.coerce.number().int().positive().max(10_000).default(20),
+    /** Sensitive money-adjacent endpoints (checkout preview, payment init) per minute. */
+    RATE_LIMIT_SENSITIVE_PER_MINUTE: z.coerce.number().int().positive().max(10_000).default(60),
   })
   // Keep unrelated process variables accessible to the runtime.
   .passthrough();

@@ -3,6 +3,7 @@ import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swa
 import type { CheckoutPreview } from '@bokku/shared';
 
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { RateLimit } from '../rate-limit/rate-limit.decorator';
 import { CheckoutService } from './checkout.service';
 import { PreviewCheckoutDto } from './dto/checkout.dto';
 
@@ -18,6 +19,7 @@ export class CheckoutController {
   constructor(private readonly checkout: CheckoutService) {}
 
   @Post('preview')
+  @RateLimit({ bucket: 'sensitive' })
   @ApiOperation({
     summary: 'Preview order pricing',
     description:

@@ -21,6 +21,7 @@ import { DeliveriesModule } from './modules/deliveries/deliveries.module';
 import { BokkuModule } from './modules/bokku/bokku.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { RateLimitModule } from './modules/rate-limit/rate-limit.module';
 
 @Module({
   imports: [
@@ -42,9 +43,12 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
     BokkuModule,
     AdminModule,
     NotificationsModule,
+    RateLimitModule,
   ],
   providers: [
     // Order matters: authenticate first, authorize second.
+    // (Rate limiting registers itself last via RateLimitModule so
+    // authenticated requests can be limited per user id.)
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
   ],

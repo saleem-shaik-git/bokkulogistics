@@ -85,8 +85,7 @@ pnpm dev
 Authentication endpoints live under `/api/v1/auth/*` (register, login, refresh
 with rotation + reuse detection, logout, forgot/reset password, verify-email,
 me). Outside production, verification/reset tokens are returned in the response
-under `data.debug.*` until the notifications module ships (Phase 11) — this is
-deliberate so flows stay testable without SMTP.
+under `data.debug.*` (no SMTP in the MVP) — deliberate so flows stay testable.
 
 ### Verifying the database connection
 
@@ -102,6 +101,19 @@ match `DATABASE_URL` to the real password, and URL-encode special characters
 (`@`, `#`, `%`, `&`) in passwords. With Docker, note that `POSTGRES_PASSWORD`
 only applies when the `postgres-data` volume is first created — remove the
 volume if you changed it later (`docker compose down -v`).
+
+### End-to-end acceptance check
+
+With the dev stack running (`pnpm dev` + Postgres/Redis + seed):
+
+```bash
+./scripts/acceptance-mvp.sh
+```
+
+Walks the full MVP journey live — catalogue → cart → checkout (server-side
+pricing) → mock payment → order → staff fulfillment → auto-dispatch → courier
+fast-forward → delivered → notifications → admin oversight, plus RBAC and
+error-envelope security spot-checks — and exits non-zero on any failure.
 
 ## Commands
 
