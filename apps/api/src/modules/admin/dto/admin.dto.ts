@@ -49,6 +49,23 @@ export class UpdateAdminUserRoleDto {
   reason?: string;
 }
 
+export class UpdateAdminStoreStatusDto {
+  /**
+   * Only ACTIVE stores take new business (checkout preview + payment
+   * initialize refuse with 409 STORE_INACTIVE otherwise). In-flight
+   * orders keep their lifecycle; SUSPENDED is the strong takedown state.
+   */
+  @ApiProperty({ enum: USER_STATUS_VALUES })
+  @IsIn(USER_STATUS_VALUES)
+  status!: EntityStatus;
+
+  @ApiProperty({ required: false, description: 'Optional audit note' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  reason?: string;
+}
+
 export class UpdateAdminUserStatusDto {
   /**
    * INACTIVE is the pre-verification state set by registration — admins

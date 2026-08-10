@@ -7,6 +7,7 @@ import {
   Param,
   ParseUUIDPipe,
   Patch,
+  Post,
   Query,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -29,6 +30,7 @@ import {
   ListAdminAuditLogsQuery,
   ListAdminOrdersQuery,
   ListAdminUsersQuery,
+  UpdateAdminStoreStatusDto,
   UpdateAdminUserRoleDto,
   UpdateAdminUserStatusDto,
 } from './dto/admin.dto';
@@ -116,6 +118,25 @@ export class AdminController {
     return this.admin.listStores();
   }
 
+  @Patch('stores/:id/status')
+  @ApiOperation({
+    summary: 'Activate, deactivate or suspend a store',
+    description:
+      'Audited (admin.store_status_changed). A non-ACTIVE store refuses new business — ' +
+      'checkout preview and payment initialize return 409 STORE_INACTIVE — while ' +
+      'in-flight orders keep their lifecycle. Deliberately NOT guarded against ' +
+      'deactivating the last active store (a trading halt is a legitimate ops lever).',
+  })
+  updateStoreStatus(
+    @CurrentUser() actor: User,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateAdminStoreStatusDto,
+    @Ip() ip: string,
+    @Headers('user-agent') userAgent?: string,
+  ): Promise<AdminStoreRow> {
+    return this.admin.updateStoreStatus(actor, id, dto, { ip, userAgent });
+  }
+
   @Get('orders')
   @ApiOperation({
     summary: 'List orders across all stores',
@@ -129,6 +150,25 @@ export class AdminController {
   @ApiOperation({ summary: 'Order detail for any store (404 when unknown)' })
   getOrder(@Param('id', ParseUUIDPipe) id: string): Promise<PublicOrderDetail> {
     return this.admin.getOrder(id);
+  }
+
+  @Post('orders/:id/retry-refund')
+  @ApiOperation({
+    summary: 'Retry the provider refund for a REFUND_PENDING order',
+    description:
+      'The only refund-state mutation — for orders stuck after a provider outage. ' +
+      'Audited (admin.refund_retried / admin.refund_retry_failed). Idempotent: an ' +
+      'already-REFUNDED order returns as-is; any other status → 409 ORDER_REFUND_NOT_PENDING. ' +
+      'Provider faults surface as 502 with the provider machine code.',
+  })
+  @ApiOkResponse({ description: 'The order (REFUNDED on success)' })
+  retryRefund(
+    @CurrentUser() actor: User,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Ip() ip: string,
+    @Headers('user-agent') userAgent?: string,
+  ): Promise<PublicOrderDetail> {
+    return this.admin.retryOrderRefund(actor, id, { ip, userAgent });
   }
 
   @Get('audit-logs')

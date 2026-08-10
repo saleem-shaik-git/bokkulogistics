@@ -1,4 +1,5 @@
 import {
+  BadGatewayException,
   ConflictException,
   Inject,
   Injectable,
@@ -24,6 +25,7 @@ import {
   auditLogs,
   deliveries,
   orders,
+  payments,
   products,
   storeStaff,
   stores,
@@ -47,13 +49,16 @@ import type {
 
 import { DRIZZLE_CLIENT } from '../../config/constants';
 import { buildPaginationMeta, parsePagination } from '../../common/pagination';
+import { PaymentIntegrationError } from '../../integrations/payments/payment-provider.interface';
 import { AuditService } from '../audit/audit.module';
 import { BOKKU_STORE_CODE } from '../bokku/guards/store-staff.guard';
 import { OrdersService } from '../orders/orders.service';
+import { PaymentsService } from '../payments/payments.service';
 import type {
   ListAdminAuditLogsQuery,
   ListAdminOrdersQuery,
   ListAdminUsersQuery,
+  UpdateAdminStoreStatusDto,
   UpdateAdminUserRoleDto,
   UpdateAdminUserStatusDto,
 } from './dto/admin.dto';
@@ -86,6 +91,7 @@ export class AdminService {
   constructor(
     @Inject(DRIZZLE_CLIENT) private readonly database: DatabaseConnection,
     private readonly ordersService: OrdersService,
+    private readonly paymentsService: PaymentsService,
     private readonly audit: AuditService,
   ) {}
 
@@ -369,6 +375,120 @@ export class AdminService {
 
   getOrder(orderId: string): Promise<PublicOrderDetail> {
     return this.ordersService.getAny(orderId);
+  }
+
+  /** Lifecycle lever: non-ACTIVE stores refuse new business at checkout. */
+  async updateStoreStatus(
+    actor: User,
+    storeId: string,
+    dto: UpdateAdminStoreStatusDto,
+    context: AdminRequestContext,
+  ): Promise<AdminStoreRow> {
+    const [store] = await this.database.db
+      .select()
+      .from(stores)
+      .where(eq(stores.id, storeId))
+      .limit(1);
+    if (!store) {
+      throw new NotFoundException({ code: 'STORE_NOT_FOUND', message: 'Store was not found' });
+    }
+    if (store.status === dto.status) {
+      const rows = await this.listStores();
+      return rows.find((row) => row.id === store.id)!; // idempotent no-op
+    }
+
+    await this.database.db
+      .update(stores)
+      .set({ status: dto.status, updatedAt: new Date() })
+      .where(eq(stores.id, store.id));
+
+    await this.audit.record({
+      actorUserId: actor.id,
+      action: 'admin.store_status_changed',
+      entityType: 'store',
+      entityId: store.id,
+      metadata: {
+        storeCode: store.code,
+        from: store.status,
+        to: dto.status,
+        ...(dto.reason ? { reason: dto.reason } : {}),
+      },
+      ipAddress: context.ip,
+      userAgent: context.userAgent,
+    });
+
+    const rows = await this.listStores();
+    return rows.find((row) => row.id === store.id)!;
+  }
+
+  /**
+   * The ONLY refund-state mutation: retry the provider refund for an
+   * order stuck in REFUND_PENDING (a provider outage earlier left it
+   * there — the cancel flow never pretends success). Already-refunded
+   * orders return as-is; everything else is a 409. The refund itself is
+   * idempotent at the payment layer.
+   */
+  async retryOrderRefund(
+    actor: User,
+    orderId: string,
+    context: AdminRequestContext,
+  ): Promise<PublicOrderDetail> {
+    const order = await this.ordersService.getRowById(orderId);
+    if (order.status === 'REFUNDED') return this.ordersService.getAny(orderId);
+    if (order.status !== 'REFUND_PENDING') {
+      throw new ConflictException({
+        code: 'ORDER_REFUND_NOT_PENDING',
+        message: `Only orders in REFUND_PENDING can be retried (status is ${order.status})`,
+      });
+    }
+
+    const [payment] = await this.database.db
+      .select()
+      .from(payments)
+      .where(eq(payments.id, order.paymentId))
+      .limit(1);
+    if (!payment) {
+      throw new ConflictException({
+        code: 'ORDER_REFUND_NOT_PENDING',
+        message: 'This order has no payment on record to refund',
+      });
+    }
+
+    try {
+      const refunded = await this.paymentsService.refundById(payment.id);
+      const detail = await this.ordersService.transitionSystem(orderId, 'REFUNDED', {
+        reference: refunded.reference,
+      });
+      await this.audit.record({
+        actorUserId: actor.id,
+        action: 'admin.refund_retried',
+        entityType: 'order',
+        entityId: order.id,
+        metadata: { orderNumber: order.orderNumber, reference: refunded.reference },
+        ipAddress: context.ip,
+        userAgent: context.userAgent,
+      });
+      return detail;
+    } catch (error) {
+      if (error instanceof PaymentIntegrationError) {
+        await this.audit.record({
+          actorUserId: actor.id,
+          action: 'admin.refund_retry_failed',
+          entityType: 'order',
+          entityId: order.id,
+          metadata: {
+            orderNumber: order.orderNumber,
+            reference: payment.reference,
+            reason: error.message,
+          },
+          ipAddress: context.ip,
+          userAgent: context.userAgent,
+        });
+        // Provider faults are upstream problems → 502 preserves the code.
+        throw new BadGatewayException({ code: error.code, message: error.message });
+      }
+      throw error;
+    }
   }
 
   // ── Audit trail ─────────────────────────────────────────────────

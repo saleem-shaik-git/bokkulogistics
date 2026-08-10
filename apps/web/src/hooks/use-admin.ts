@@ -6,6 +6,18 @@ import type { EntityStatus, OrderStatus, UserRole } from '@bokku/shared';
 import * as adminApi from '@/lib/admin-api';
 import { useAuthStore } from '@/stores/auth-store';
 
+function useAdminMutation<TInput, TResult>(
+  mutationFn: (input: TInput) => Promise<TResult>,
+  scope: string,
+) {
+  const queryClient = useQueryClient();
+  const user = useAuthStore((s) => s.user);
+  return useMutation({
+    mutationFn,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [...adminKey(user?.id), scope] }),
+  });
+}
+
 export function isPlatformAdmin(role: string | undefined): boolean {
   return role === 'PLATFORM_ADMIN';
 }
@@ -65,6 +77,28 @@ export function useAdminStores() {
     enabled: isPlatformAdmin(user?.role),
     refetchInterval: 30_000,
   });
+}
+
+/** Store lifecycle; invalidates the stores list (dashboard/tag totals too). */
+export function useUpdateAdminStoreStatus() {
+  const queryClient = useQueryClient();
+  const user = useAuthStore((s) => s.user);
+  return useMutation({
+    mutationFn: (input: { storeId: string; status: EntityStatus; reason?: string }) =>
+      adminApi.updateAdminStoreStatus(input.storeId, {
+        status: input.status,
+        reason: input.reason,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [...adminKey(user?.id), 'stores'] });
+      queryClient.invalidateQueries({ queryKey: [...adminKey(user?.id), 'dashboard'] });
+    },
+  });
+}
+
+/** REFUND_PENDING rescue; invalidates the orders list on success. */
+export function useRetryAdminRefund() {
+  return useAdminMutation((orderId: string) => adminApi.retryAdminOrderRefund(orderId), 'orders');
 }
 
 export function useAdminOrders(filters: { status?: OrderStatus; storeId?: string }, page = 1) {

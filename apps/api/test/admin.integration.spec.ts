@@ -408,6 +408,162 @@ describe('store + order oversight', () => {
   });
 });
 
+describe('store lifecycle', () => {
+  it('deactivating a store blocks new business but not ops; reactivation restores it', async () => {
+    // Customer adds a product while the store is ACTIVE, then the store
+    // is deactivated — existing cart contents are irrelevant, checkout
+    // preview (and thereby payment initialize) refuses new business.
+    await call('/cart/items', { token: customerToken, body: { productId: productA, quantity: 1 } });
+
+    const updated = await call<AdminStoreRow>(`/admin/stores/${storeId}/status`, {
+      method: 'PATCH',
+      token: adminToken,
+      body: { status: 'INACTIVE', reason: 'stocktake' },
+    });
+    expect(updated.body.data.status).toBe('INACTIVE');
+    expect(updated.body.data.todayOrders).toBe(0);
+
+    const preview = await call('/checkout/preview', {
+      token: customerToken,
+      body: { addressId: customerAddressId },
+    });
+    expect(preview.status).toBe(409);
+    expect(errorCode(preview)).toBe('STORE_INACTIVE');
+
+    const init = await call('/payments/initialize', {
+      token: customerToken,
+      body: { addressId: customerAddressId },
+    });
+    expect(init.status).toBe(409);
+    expect(errorCode(init)).toBe('STORE_INACTIVE');
+
+    // Store staff still operate (fulfill/refund in-flight orders)…
+    expect((await call('/bokku/dashboard', { token: managerToken })).status).toBe(200);
+
+    // Reactivate → checkout flows again.
+    const reactivated = await call<AdminStoreRow>(`/admin/stores/${storeId}/status`, {
+      method: 'PATCH',
+      token: adminToken,
+      body: { status: 'ACTIVE' },
+    });
+    expect(reactivated.body.data.status).toBe('ACTIVE');
+    expect(
+      (
+        await call('/checkout/preview', {
+          token: customerToken,
+          body: { addressId: customerAddressId },
+        })
+      ).status,
+    ).toBe(201); // preview is a POST — Nest answers 201 on success
+
+    const audit = await sql`
+      SELECT metadata FROM audit_logs
+      WHERE action = 'admin.store_status_changed' AND entity_id = ${storeId} ORDER BY created_at`;
+    expect(audit).toHaveLength(2);
+    expect(audit[0]!.metadata).toMatchObject({
+      from: 'ACTIVE',
+      to: 'INACTIVE',
+      reason: 'stocktake',
+    });
+  });
+
+  it('rejects customers and unknown stores, and no-ops on repeat', async () => {
+    expect(
+      (
+        await call(`/admin/stores/${storeId}/status`, {
+          method: 'PATCH',
+          token: customerToken,
+          body: { status: 'INACTIVE' },
+        })
+      ).status,
+    ).toBe(403);
+
+    const missing = await call('/admin/stores/9d6f8e7c-1111-4222-8333-944455556666/status', {
+      method: 'PATCH',
+      token: adminToken,
+      body: { status: 'INACTIVE' },
+    });
+    expect(missing.status).toBe(404);
+    expect(errorCode(missing)).toBe('STORE_NOT_FOUND');
+
+    expect(
+      (
+        await call(`/admin/stores/${storeId}/status`, {
+          method: 'PATCH',
+          token: adminToken,
+          body: { status: 'BROKEN' },
+        })
+      ).status,
+    ).toBe(400);
+
+    const noop = await call(`/admin/stores/${storeId}/status`, {
+      method: 'PATCH',
+      token: adminToken,
+      body: { status: 'ACTIVE' },
+    });
+    expect(noop.status).toBe(200);
+    const audit = await sql`
+      SELECT 1 FROM audit_logs WHERE action = 'admin.store_status_changed'`;
+    expect(audit).toHaveLength(0); // no audit row for a no-op
+  });
+});
+
+describe('refund retry', () => {
+  it('retries a REFUND_PENDING order to REFUNDED, audited and idempotent', async () => {
+    const orderId = await paidOrderId();
+    // Simulate the provider-outage residue: paid order stuck awaiting refund.
+    await sql`UPDATE orders SET status = 'REFUND_PENDING' WHERE id = ${orderId}`;
+
+    const retried = await call<PublicOrderDetail>(`/admin/orders/${orderId}/retry-refund`, {
+      method: 'POST',
+      token: adminToken,
+    });
+    expect(retried.status).toBe(201); // POST → 201 on success
+    expect(retried.body.data.status).toBe('REFUNDED');
+
+    const [payment] = await sql`
+      SELECT p.status FROM payments p
+      JOIN orders o ON o.payment_id = p.id WHERE o.id = ${orderId}`;
+    expect(payment!.status).toBe('REFUNDED');
+
+    const audit = await sql`
+      SELECT action FROM audit_logs
+      WHERE action LIKE 'admin.refund%' AND entity_id = ${orderId} ORDER BY created_at`;
+    expect(audit.map((r) => r.action)).toEqual(['admin.refund_retried']);
+
+    // Idempotent: already refunded → 200 REFUNDED, no extra audit row.
+    const again = await call<PublicOrderDetail>(`/admin/orders/${orderId}/retry-refund`, {
+      method: 'POST',
+      token: adminToken,
+    });
+    expect(again.status).toBe(201);
+    expect(again.body.data.status).toBe('REFUNDED');
+    const auditAfter = await sql`
+      SELECT 1 FROM audit_logs
+      WHERE action LIKE 'admin.refund%' AND entity_id = ${orderId}`;
+    expect(auditAfter).toHaveLength(1);
+  });
+
+  it('refuses orders that are not awaiting a refund', async () => {
+    const orderId = await paidOrderId(); // PAID — refundable via cancel, not retryable here.
+    const res = await call<PublicOrderDetail>(`/admin/orders/${orderId}/retry-refund`, {
+      method: 'POST',
+      token: adminToken,
+    });
+    expect(res.status).toBe(409);
+    expect(errorCode(res)).toBe('ORDER_REFUND_NOT_PENDING');
+
+    expect(
+      (
+        await call<PublicOrderDetail>(`/admin/orders/${orderId}/retry-refund`, {
+          method: 'POST',
+          token: customerToken,
+        })
+      ).status,
+    ).toBe(403);
+  });
+});
+
 describe('audit trail endpoint', () => {
   it('returns admin + order actions, prefix-filtered and paginated', async () => {
     await call(`/admin/users/${managerId}/status`, {

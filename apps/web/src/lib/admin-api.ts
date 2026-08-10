@@ -64,6 +64,24 @@ export function fetchAdminStores(): Promise<AdminStoreRow[]> {
   return authedRequest<AdminStoreRow[]>('/admin/stores');
 }
 
+/** Lifecycle lever — a non-ACTIVE store refuses new business at checkout. */
+export function updateAdminStoreStatus(
+  id: string,
+  input: { status: EntityStatus; reason?: string },
+): Promise<AdminStoreRow> {
+  return authedRequest<AdminStoreRow>(`/admin/stores/${encodeURIComponent(id)}/status`, {
+    method: 'PATCH',
+    body: input,
+  });
+}
+
+/** Retry the provider refund for a REFUND_PENDING order (idempotent). */
+export function retryAdminOrderRefund(id: string): Promise<PublicOrderDetail> {
+  return authedRequest<PublicOrderDetail>(`/admin/orders/${encodeURIComponent(id)}/retry-refund`, {
+    method: 'POST',
+  });
+}
+
 export function fetchAdminOrders(params: {
   status?: OrderStatus;
   storeId?: string;

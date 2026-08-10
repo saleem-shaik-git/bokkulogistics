@@ -5,19 +5,22 @@ import { useState } from 'react';
 import { ORDER_STATUSES, ORDER_STATUS_LABELS, type OrderStatus } from '@bokku/shared';
 
 import { StatusChip } from '@/components/status-chip';
-import { useAdminOrders, useAdminStores } from '@/hooks/use-admin';
+import { useAdminOrders, useAdminStores, useRetryAdminRefund } from '@/hooks/use-admin';
+import { ApiError } from '@/lib/api-client';
 import { formatKobo } from '@/lib/money';
 import { Pager } from '../users/page';
 
 /**
- * Cross-store order oversight (read-only). Rows deep-link into the ops
- * detail (/bokku/orders/[id]) — PLATFORM_ADMIN bypasses the store-staff
- * guard server-side, so fulfillment tooling works from here too.
+ * Cross-store order oversight. Rows deep-link into the ops detail
+ * (/bokku/orders/[id]) — PLATFORM_ADMIN bypasses the store-staff guard
+ * server-side. REFUND_PENDING rows expose the provider-refund retry
+ * (the only refund mutation available to the platform admin).
  */
 export default function AdminOrdersPage() {
   const [status, setStatus] = useState<OrderStatus | ''>('');
   const [storeId, setStoreId] = useState('');
   const [page, setPage] = useState(1);
+  const [note, setNote] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
 
   const filters = {
     ...(status ? { status } : {}),
@@ -25,8 +28,22 @@ export default function AdminOrdersPage() {
   };
   const ordersQuery = useAdminOrders(filters, page);
   const storesQuery = useAdminStores();
+  const retryRefund = useRetryAdminRefund();
 
   const data = ordersQuery.data;
+
+  function retry(orderNumber: string, orderId: string) {
+    setNote(null);
+    retryRefund.mutate(orderId, {
+      onSuccess: () =>
+        setNote({ tone: 'ok', text: `${orderNumber} refunded — money is on its way back.` }),
+      onError: (err) =>
+        setNote({
+          tone: 'error',
+          text: err instanceof ApiError ? err.message : 'The retry failed — try again.',
+        }),
+    });
+  }
 
   return (
     <div className="space-y-4">
@@ -67,6 +84,19 @@ export default function AdminOrdersPage() {
         </select>
       </div>
 
+      {note && (
+        <p
+          role="status"
+          className={`rounded-xl px-4 py-2.5 text-sm font-medium ${
+            note.tone === 'ok'
+              ? 'border border-emerald-200 bg-emerald-50 text-emerald-800'
+              : 'border border-red-200 bg-red-50 text-red-700'
+          }`}
+        >
+          {note.text}
+        </p>
+      )}
+
       {ordersQuery.isLoading ? (
         <div className="space-y-2">
           {Array.from({ length: 5 }).map((_, i) => (
@@ -106,6 +136,23 @@ export default function AdminOrdersPage() {
                       </span>
                     </div>
                   </Link>
+                  {order.status === 'REFUND_PENDING' && (
+                    <div className="border-t border-amber-100 bg-amber-50 px-4 py-2.5">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-xs text-amber-800">
+                          The provider refund failed earlier — retry it.
+                        </p>
+                        <button
+                          type="button"
+                          disabled={retryRefund.isPending}
+                          onClick={() => retry(order.orderNumber, order.id)}
+                          className="shrink-0 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
+                        >
+                          {retryRefund.isPending ? 'Retrying…' : 'Retry refund'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </li>
               ))}
               {data.data.length === 0 && (

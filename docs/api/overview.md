@@ -310,8 +310,21 @@ oversight, and the only mutations are user role/status changes.
   are idempotent 200 no-ops (no duplicate audit rows).
 - `GET /admin/stores` — every store with staff/product counts and today's
   order/revenue numbers.
+- `PATCH /admin/stores/:id/status` `{ status, reason? }` — store lifecycle
+  (audited `admin.store_status_changed`). A non-ACTIVE store refuses NEW
+  business: checkout preview and payment initialize fail with 409
+  `STORE_INACTIVE`; in-flight orders keep their lifecycle and staff keep
+  full `/bokku` access. Not guarded against halting the last active store
+  (a trading halt is a legitimate lever). Repeat calls are no-ops.
 - `GET /admin/orders?status=&storeId=&page&limit=` and
   `GET /admin/orders/:id` — cross-store order reads (404-scoped).
+- `POST /admin/orders/:id/retry-refund` — the only refund-state mutation:
+  retries the provider refund for an order stuck in `REFUND_PENDING`
+  (audited `admin.refund_retried` / `admin.refund_retry_failed`).
+  Idempotent (REFUNDED returns as-is); anything else → 409
+  `ORDER_REFUND_NOT_PENDING`; provider faults surface as 502 with the
+  provider machine code. The web console shows the retry control inline
+  on REFUND_PENDING rows.
 - `GET /admin/audit-logs?action=&actorId=&from=&to=&page&limit=` — the audit
   trail, newest first, joined with the acting user; `action` is a prefix
   filter (`order` ⇒ `order.*`).

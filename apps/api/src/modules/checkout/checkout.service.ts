@@ -59,12 +59,22 @@ export class CheckoutService {
       .select({
         latitude: stores.latitude,
         longitude: stores.longitude,
+        status: stores.status,
       })
       .from(stores)
       .where(eq(stores.id, cart.storeId!))
       .limit(1);
     if (!store) {
       throw new InternalServerErrorException('Cart store no longer exists');
+    }
+    if (store.status !== 'ACTIVE') {
+      // A non-ACTIVE store takes no new business; in-flight orders keep
+      // their lifecycle. Payment initialize goes through this preview, so
+      // new billing is covered here too.
+      throw new ConflictException({
+        code: 'STORE_INACTIVE',
+        message: 'This store is temporarily unavailable — please try again later',
+      });
     }
 
     const quote = await this.delivery.getQuote({
