@@ -25,6 +25,9 @@ const VALID: Array<[OrderActor, OrderStatus, OrderStatus]> = [
   ['STAFF', 'CONFIRMED', 'CANCELLED'],
   ['STAFF', 'PREPARING', 'READY_FOR_PICKUP'],
   ['STAFF', 'PREPARING', 'CANCELLED'],
+  // Early dispatch stages stay cancellable by staff (courier cancelled first)
+  ['STAFF', 'DELIVERY_REQUESTED', 'CANCELLED'],
+  ['STAFF', 'DRIVER_ASSIGNED', 'CANCELLED'],
   ['SYSTEM', 'READY_FOR_PICKUP', 'DELIVERY_REQUESTED'],
   ['SYSTEM', 'DELIVERY_REQUESTED', 'DRIVER_ASSIGNED'],
   ['SYSTEM', 'DRIVER_ASSIGNED', 'OUT_FOR_DELIVERY'],
@@ -52,6 +55,8 @@ const INVALID: Array<[OrderActor, OrderStatus, OrderStatus]> = [
   ['CUSTOMER', 'OUT_FOR_DELIVERY', 'DELIVERED'],
   ['STAFF', 'DELIVERY_REQUESTED', 'DRIVER_ASSIGNED'],
   ['STAFF', 'OUT_FOR_DELIVERY', 'DELIVERED'],
+  // Too late to cancel (courier near/at the customer or journey complete)
+  ['STAFF', 'OUT_FOR_DELIVERY', 'CANCELLED'],
   // Refund statuses cannot be set directly by people
   ['STAFF', 'CANCELLED', 'REFUND_PENDING'],
   ['STAFF', 'REFUND_PENDING', 'REFUNDED'],

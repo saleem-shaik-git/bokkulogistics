@@ -363,6 +363,39 @@ export class OrdersService {
     return this.toDetail(updated ?? order);
   }
 
+  /**
+   * DELIVERED with effects: the stock reservation is settled (on-hand and
+   * reserved both drop) in the same transaction as the status change and
+   * its audit row — the money-side bookkeeping can never drift from the
+   * order state.
+   */
+  async completeDelivery(orderId: string): Promise<PublicOrderDetail> {
+    const order = await this.requireOrder(eq(orders.id, orderId));
+    OrderStatePolicy.assertTransition('SYSTEM', order.status, 'DELIVERED');
+
+    const updated = await this.database.db.transaction(async (tx) => {
+      const lines = await tx
+        .select({ productId: orderItems.productId, quantity: orderItems.quantity })
+        .from(orderItems)
+        .where(eq(orderItems.orderId, order.id));
+      await this.inventory.settleReservation(lines, order.storeId, tx);
+
+      const [row] = await tx
+        .update(orders)
+        .set({ status: 'DELIVERED', deliveredAt: new Date(), updatedAt: new Date() })
+        .where(eq(orders.id, order.id))
+        .returning();
+      await this.auditInTx(tx, {
+        action: 'order.status_changed',
+        entityType: 'order',
+        entityId: order.id,
+        metadata: { from: order.status, to: 'DELIVERED', actor: 'SYSTEM' },
+      });
+      return row ?? order;
+    });
+    return this.toDetail(updated);
+  }
+
   // ── Lookups & mapping ───────────────────────────────────────────
 
   async findByPaymentId(paymentId: string): Promise<Order | null> {

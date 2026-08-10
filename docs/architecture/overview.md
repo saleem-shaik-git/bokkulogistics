@@ -52,7 +52,7 @@ modules/payments ──┘         ▲
 | 6 | Payments (Paystack + mock) | ✅ complete |
 | 7 | Orders + state machine | ✅ complete |
 | 8 | Bokku operations dashboard | ✅ complete |
-| 9 | Delivery adapters | ⬜ |
+| 9 | Delivery adapters | ✅ complete |
 | 10 | Admin | ⬜ |
 | 11 | Notifications | ⬜ |
 | 12 | Production hardening | ⬜ |

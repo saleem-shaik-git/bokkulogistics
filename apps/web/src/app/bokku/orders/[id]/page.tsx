@@ -4,9 +4,11 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';
 import {
+  DELIVERY_STATUS_LABELS,
   ORDER_STATUS_LABELS,
   ORDER_TERMINAL_STATUSES,
   type OrderStatus,
+  type PublicDeliveryTracking,
 } from '@bokku/shared';
 
 import { StatusChip } from '@/components/status-chip';
@@ -14,6 +16,8 @@ import {
   OPS_CANCELLABLE,
   OPS_NEXT_STEP,
   useBokkuOrder,
+  useDispatchBokkuOrder,
+  useOpsOrderTracking,
   useTransitionBokkuOrder,
 } from '@/hooks/use-bokku';
 import { ApiError } from '@/lib/api-client';
@@ -28,6 +32,8 @@ export default function BokkuOrderDetailPage() {
   const params = useParams<{ id: string }>();
   const orderQuery = useBokkuOrder(params.id);
   const transition = useTransitionBokkuOrder();
+  const trackingQuery = useOpsOrderTracking(params.id, orderQuery.data?.status);
+  const dispatch = useDispatchBokkuOrder();
 
   const [reason, setReason] = useState('');
   const [actionNote, setActionNote] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
@@ -87,6 +93,20 @@ export default function BokkuOrderDetailPage() {
 
   const next = OPS_NEXT_STEP[order.status];
   const terminal = ORDER_TERMINAL_STATUSES.includes(order.status);
+  const tracking = trackingQuery.data ?? null;
+
+  function runDispatch() {
+    setActionNote(null);
+    dispatch.mutate(params.id, {
+      onSuccess: () =>
+        setActionNote({ tone: 'ok', text: 'Courier dispatched — tracking is live on this page.' }),
+      onError: (err) =>
+        setActionNote({
+          tone: 'error',
+          text: err instanceof ApiError ? err.message : 'Dispatch failed — try again.',
+        }),
+    });
+  }
   const progressSteps: OrderStatus[] = [
     'PAID',
     'CONFIRMED',
@@ -144,7 +164,9 @@ export default function BokkuOrderDetailPage() {
           ) : (
             <p className="text-sm text-slate-500">
               {order.status === 'READY_FOR_PICKUP'
-                ? 'Order is packed — delivery dispatch comes online soon (tracked here).'
+                ? tracking
+                  ? 'Order is packed — the courier has been requested.'
+                  : 'Order is packed — courier dispatch did not complete yet (see below).'
                 : 'Delivery is in progress and tracked automatically.'}
             </p>
           )}
@@ -156,6 +178,8 @@ export default function BokkuOrderDetailPage() {
               </label>
               <p className="mt-0.5 text-xs text-slate-400">
                 Releases the reserved stock and refunds the customer through the payment provider.
+                {['DELIVERY_REQUESTED', 'DRIVER_ASSIGNED'].includes(order.status) &&
+                  ' Cancels the rider with the delivery provider first — not possible once the parcel is picked up.'}
               </p>
               <textarea
                 id="cancel-reason"
@@ -222,6 +246,26 @@ export default function BokkuOrderDetailPage() {
           Quote {order.deliveryQuote.provider} · {order.deliveryQuote.distanceKm.toFixed(1)} km · ~
           {order.deliveryQuote.estimatedMinutes} min
         </p>
+
+        {tracking ? (
+          <CourierPanel tracking={tracking} />
+        ) : (
+          order.status === 'READY_FOR_PICKUP' && (
+            <div className="mt-3 border-t border-slate-100 pt-3">
+              <p className="text-sm text-amber-700">
+                No courier has been dispatched for this order yet.
+              </p>
+              <button
+                type="button"
+                disabled={dispatch.isPending}
+                onClick={runDispatch}
+                className="mt-2 rounded-xl bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+              >
+                {dispatch.isPending ? 'Dispatching…' : 'Dispatch courier'}
+              </button>
+            </div>
+          )
+        )}
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5">
@@ -249,6 +293,85 @@ export default function BokkuOrderDetailPage() {
           )}
         </dl>
       </section>
+    </div>
+  );
+}
+
+function CourierPanel({ tracking }: { tracking: PublicDeliveryTracking }) {
+  const terminal = ['DELIVERED', 'CANCELLED'].includes(tracking.status);
+  return (
+    <div className="mt-3 border-t border-slate-100 pt-3">
+      <p>
+        <span
+          className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
+            terminal ? 'bg-slate-100 text-slate-500' : 'bg-amber-100 text-amber-700'
+          }`}
+        >
+          {!terminal && (
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" aria-hidden />
+          )}
+          {DELIVERY_STATUS_LABELS[tracking.status]}
+        </span>
+      </p>
+      <dl className="mt-2 space-y-1.5 text-sm">
+        <div className="flex justify-between text-slate-600">
+          <dt>Dispatch id</dt>
+          <dd className="font-mono text-xs">{tracking.externalId}</dd>
+        </div>
+        {tracking.courier && (
+          <>
+            <div className="flex justify-between text-slate-600">
+              <dt>Rider</dt>
+              <dd>
+                {tracking.courier.name}
+                {tracking.courier.vehicle ? ` · ${tracking.courier.vehicle}` : ''}
+              </dd>
+            </div>
+            <div className="flex justify-between text-slate-600">
+              <dt>Phone</dt>
+              <dd>
+                <a href={`tel:${tracking.courier.phone}`} className="text-brand-700 underline">
+                  {tracking.courier.phone}
+                </a>
+              </dd>
+            </div>
+          </>
+        )}
+        <div className="flex justify-between text-slate-600">
+          <dt>Dispatched</dt>
+          <dd>
+            {new Date(tracking.dispatchedAt).toLocaleString('en-NG', {
+              dateStyle: 'medium',
+              timeStyle: 'short',
+            })}
+          </dd>
+        </div>
+        {tracking.deliveredAt && (
+          <div className="flex justify-between text-slate-600">
+            <dt>Delivered</dt>
+            <dd>
+              {new Date(tracking.deliveredAt).toLocaleString('en-NG', {
+                dateStyle: 'medium',
+                timeStyle: 'short',
+              })}
+            </dd>
+          </div>
+        )}
+        {tracking.cancelledAt && (
+          <div className="flex justify-between text-slate-600">
+            <dt>Courier cancelled</dt>
+            <dd>
+              {new Date(tracking.cancelledAt).toLocaleString('en-NG', {
+                dateStyle: 'medium',
+                timeStyle: 'short',
+              })}
+            </dd>
+          </div>
+        )}
+      </dl>
+      {!['DELIVERED', 'CANCELLED'].includes(tracking.status) && (
+        <p className="mt-2 text-xs text-slate-400">Tracking refreshes automatically.</p>
+      )}
     </div>
   );
 }

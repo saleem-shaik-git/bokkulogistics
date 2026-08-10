@@ -1,8 +1,14 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ORDER_TERMINAL_STATUSES } from '@bokku/shared';
+import {
+  DELIVERY_TERMINAL_STATUSES,
+  ORDER_TERMINAL_STATUSES,
+  type OrderStatus,
+  type PublicDeliveryTracking,
+} from '@bokku/shared';
 
+import { ApiError } from '@/lib/api-client';
 import * as ordersApi from '@/lib/orders-api';
 import { useAuthStore } from '@/stores/auth-store';
 
@@ -51,5 +57,40 @@ export function useOrder(orderId: string | undefined) {
     enabled: !!user && !!orderId,
     refetchInterval: (q) =>
       q.state.data && !ORDER_TERMINAL_STATUSES.includes(q.state.data.status) ? 5_000 : false,
+  });
+}
+
+/** Statuses in which a courier may exist for the order. */
+const PRE_DISPATCH_ORDER_STATUSES: readonly OrderStatus[] = [
+  'PENDING_PAYMENT',
+  'PAID',
+  'CONFIRMED',
+  'PREPARING',
+];
+
+/**
+ * Courier tracking for an order. 404 DELIVERY_NOT_FOUND maps to null (not
+ * an error — nothing dispatched yet); polls while the courier is active.
+ */
+export function useOrderTracking(
+  orderId: string | undefined,
+  orderStatus: OrderStatus | undefined,
+) {
+  const user = useAuthStore((s) => s.user);
+  const mayHaveCourier =
+    orderStatus !== undefined && !PRE_DISPATCH_ORDER_STATUSES.includes(orderStatus);
+  return useQuery({
+    queryKey: [...orderQueryKey(user?.id, orderId), 'tracking'],
+    queryFn: async (): Promise<PublicDeliveryTracking | null> => {
+      try {
+        return await ordersApi.fetchOrderTracking(orderId!);
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 404) return null;
+        throw error;
+      }
+    },
+    enabled: !!user && !!orderId && mayHaveCourier,
+    refetchInterval: (q) =>
+      q.state.data && !DELIVERY_TERMINAL_STATUSES.includes(q.state.data.status) ? 4_000 : false,
   });
 }

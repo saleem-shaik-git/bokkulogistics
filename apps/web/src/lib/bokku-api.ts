@@ -5,6 +5,7 @@ import type {
   OpsProductStatus,
   OrderStatus,
   Paginated,
+  PublicDeliveryTracking,
   PublicOrderDetail,
   PublicOrderSummary,
 } from '@bokku/shared';
@@ -35,6 +36,21 @@ export function fetchOpsOrders(params: {
 
 export function fetchOpsOrder(id: string): Promise<PublicOrderDetail> {
   return authedRequest<PublicOrderDetail>(`/bokku/orders/${encodeURIComponent(id)}`);
+}
+
+/** Courier tracking for a store order (syncs the provider on every read). */
+export function fetchOpsOrderTracking(id: string): Promise<PublicDeliveryTracking> {
+  return authedRequest<PublicDeliveryTracking>(`/bokku/orders/${encodeURIComponent(id)}/tracking`);
+}
+
+/**
+ * Explicit dispatch retry for a READY_FOR_PICKUP order (dispatch normally
+ * fires automatically at the READY transition). Idempotent server-side.
+ */
+export function dispatchOpsOrder(id: string): Promise<PublicDeliveryTracking> {
+  return authedRequest<PublicDeliveryTracking>(`/bokku/orders/${encodeURIComponent(id)}/dispatch`, {
+    method: 'POST',
+  });
 }
 
 export function transitionOpsOrder(

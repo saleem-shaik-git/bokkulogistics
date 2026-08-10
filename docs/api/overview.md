@@ -239,6 +239,48 @@ DELIVERED, CANCELLED, REFUNDED.
   set/delta adjustments). Staff sign-in routes here by default; customers
   are bounced back to the storefront.
 
+## Deliveries (Phase 9)
+
+Dispatch and courier tracking. `deliveries` holds one row per order
+(unique `deliveries_order_unique` — the idempotency anchor), and every
+customer/staff read *syncs* the provider state first, so polling the
+tracking endpoint is what moves the courier along (no websockets, no
+workers in the MVP).
+
+- **Dispatch happens automatically.** Marking an order `READY_FOR_PICKUP`
+  dispatches the courier through the `DeliveryProvider` and moves the
+  order to `DELIVERY_REQUESTED` in the same request (audit
+  `delivery.dispatched`; a provider failure logs `delivery.dispatch_failed`
+  and leaves the order READY so staff can retry — the request still
+  succeeds).
+- `POST /bokku/orders/:id/dispatch` (staff) — explicit dispatch/retry.
+  Idempotent (existing delivery returned as-is); 409
+  `DELIVERY_NOT_DISPATCHABLE` unless the order is READY_FOR_PICKUP.
+- `GET /orders/:id/tracking` (owner) and `GET /bokku/orders/:id/tracking`
+  (store staff) — sync + return the courier state; 404 `DELIVERY_NOT_FOUND`
+  until something is dispatched. Body: `externalId`, `provider`, `status`,
+  `courier` (name/phone/vehicle — only once a rider is assigned),
+  `etaMinutes` (from the honored quote), `dispatchedAt` / `deliveredAt` /
+  `cancelledAt`. Unsets → `dispatchedAt` is always set (the row is born
+  at dispatch time).
+- **Status mapping.** Courier stages fast-forward the order through
+  `DRIVER_ASSIGNED` → `OUT_FOR_DELIVERY` (at PICKED_UP) → `DELIVERED`.
+  The final step settles the inventory reservation (on-hand −= qty,
+  reserved released) and stamps `deliveredAt` atomically.
+- **Cancellation window.** Staff may cancel up to `DRIVER_ASSIGNED`; the
+  courier is cancelled through the provider first and a 409
+  `DELIVERY_NOT_CANCELLABLE` aborts the cancellation without touching
+  stock or the payment (parity with real bolt/Uber rules: no cancellation
+  once the rider has the parcel). A provider-side cancellation is synced
+  but never refunds or changes the order by itself.
+- **Mock provider** (`DELIVERY_DEFAULT_PROVIDER=MOCK`, default): Redis
+  simulation keyed `mockdel:<id>` (24 h TTL), progression
+  DRIVER_ASSIGNED@10s → DRIVER_ARRIVING@30s → PICKED_UP@45s →
+  IN_TRANSIT@60s → DELIVERED@120s, cancellable only in
+  REQUESTED/DRIVER_ASSIGNED, interpolated courier location for live
+  tracking payloads. `UBER`/`BOLT` fail loudly with
+  `DELIVERY_PROVIDER_NOT_CONFIGURED` at boot until real adapters land.
+
 ## Security defaults
 
 Helmet headers, CORS (open in dev, origin-locked via `CORS_ORIGINS` in

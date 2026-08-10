@@ -32,9 +32,9 @@ export interface DeliveryQuote {
   expiresAt: string;
 }
 
-/** Delivery lifecycle statuses (mirrors the deliveries state machine). */
+/** Courier lifecycle statuses. A delivery is born at REQUESTED — the QUOTE
+ *  stage is a pre-delivery artifact represented by DeliveryQuote itself. */
 export type DeliveryStatus =
-  | 'QUOTE'
   | 'REQUESTED'
   | 'DRIVER_ASSIGNED'
   | 'DRIVER_ARRIVING'
@@ -69,7 +69,7 @@ export interface DeliveryStatusResult {
 }
 
 export interface DeliveryTracking extends DeliveryStatusResult {
-  courier: { name: string | null; phone: string | null } | null;
+  courier: { name: string | null; phone: string | null; vehicle: string | null } | null;
   currentLocation: { latitude: number; longitude: number } | null;
 }
 

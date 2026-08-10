@@ -27,6 +27,7 @@ import {
   type PaginationQuery,
 } from '../../common/pagination';
 import { slugify, withSuffix } from '../../common/utils/slugify';
+import { DeliveriesService } from '../deliveries/deliveries.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { OrdersService } from '../orders/orders.service';
 import type { ListOrdersQuery, TransitionOrderStatusDto } from '../orders/dto/orders.dto';
@@ -55,6 +56,7 @@ export class BokkuService {
     private readonly orders: OrdersService,
     private readonly paymentsService: PaymentsService,
     private readonly inventoryService: InventoryService,
+    private readonly deliveriesService: DeliveriesService,
   ) {}
 
   async listProducts(store: Store, query: PaginationQuery): Promise<Paginated<Product>> {
@@ -297,10 +299,13 @@ export class BokkuService {
 
   /**
    * Staff order operations. Normal progressions go straight through the
-   * state policy. Cancellation additionally runs the refund path:
-   * release stock (inside the transition) → REFUND_PENDING → provider
-   * refund → REFUNDED. A failed refund leaves the order REFUND_PENDING
-   * (never silently "refunded") for ops to retry.
+   * state policy; READY_FOR_PICKUP additionally auto-dispatches the courier
+   * (a provider hiccup never blocks the transition — dispatch retries via
+   * POST /bokku/orders/:id/dispatch, audited delivery.dispatch_failed).
+   * Cancellation first cancels the courier when one was dispatched, then
+   * runs the refund path: release stock (inside the transition) →
+   * REFUND_PENDING → provider refund → REFUNDED. A failed refund leaves
+   * the order REFUND_PENDING (never silently "refunded") for ops to retry.
    */
   async transitionOrder(
     store: Store,
@@ -315,8 +320,31 @@ export class BokkuService {
           message: 'Refund statuses are driven by the refund flow, not set directly',
         });
       }
-      return this.orders.transitionForStore(store.id, orderId, dto.status, dto.reason, actor);
+      const updated = await this.orders.transitionForStore(
+        store.id,
+        orderId,
+        dto.status,
+        dto.reason,
+        actor,
+      );
+      if (dto.status === 'READY_FOR_PICKUP') {
+        try {
+          await this.deliveriesService.dispatchForOrder(orderId, actor);
+          // Dispatch moved the order to DELIVERY_REQUESTED — return fresh.
+          return this.orders.getForStore(store.id, orderId);
+        } catch (error) {
+          this.logger.warn(
+            `Auto-dispatch for order ${orderId} failed — stays READY_FOR_PICKUP for a manual retry`,
+            error as Error,
+          );
+        }
+      }
+      return updated;
     }
+
+    // Cancel the courier FIRST when one was already dispatched — a
+    // provider refusal aborts the whole cancellation (order untouched).
+    await this.deliveriesService.cancelThroughProvider(orderId, dto.reason, actor);
 
     await this.orders.transitionForStore(store.id, orderId, 'CANCELLED', dto.reason, actor);
 

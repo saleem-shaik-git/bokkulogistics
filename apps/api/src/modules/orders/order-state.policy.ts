@@ -28,6 +28,10 @@ const RULES: Readonly<Record<OrderActor, readonly Edge[]>> = {
     'CONFIRMED->CANCELLED',
     'PREPARING->READY_FOR_PICKUP',
     'PREPARING->CANCELLED',
+    // Early dispatch stages stay cancellable (provider courier is cancelled
+    // first; from DRIVER_ARRIVING on, the handoff is in motion).
+    'DELIVERY_REQUESTED->CANCELLED',
+    'DRIVER_ASSIGNED->CANCELLED',
   ],
   SYSTEM: [
     'PENDING_PAYMENT->PAID',

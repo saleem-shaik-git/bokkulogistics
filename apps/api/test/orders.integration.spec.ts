@@ -409,9 +409,9 @@ describe('bokku operations', () => {
     expect(errorCode(asRogue)).toBe('NOT_STORE_STAFF');
   });
 
-  it('walks the staff progression PAID → CONFIRMED → PREPARING → READY_FOR_PICKUP', async () => {
+  it('walks the staff progression and auto-dispatches at READY_FOR_PICKUP', async () => {
     const orderId = await paidOrderId();
-    for (const status of ['CONFIRMED', 'PREPARING', 'READY_FOR_PICKUP'] as const) {
+    for (const status of ['CONFIRMED', 'PREPARING'] as const) {
       const res = await call<PublicOrderDetail>(`/bokku/orders/${orderId}/status`, {
         method: 'PATCH',
         token: managerToken,
@@ -421,6 +421,16 @@ describe('bokku operations', () => {
       expect(res.body.data.status).toBe(status);
     }
 
+    // Phase 9: READY_FOR_PICKUP immediately dispatches the courier — the
+    // response shows the order already in DELIVERY_REQUESTED.
+    const ready = await call<PublicOrderDetail>(`/bokku/orders/${orderId}/status`, {
+      method: 'PATCH',
+      token: managerToken,
+      body: { status: 'READY_FOR_PICKUP' },
+    });
+    expect(ready.status).toBe(200);
+    expect(ready.body.data.status).toBe('DELIVERY_REQUESTED');
+
     const changes = (await auditActions('order.status_changed')).map(
       (row) => row.metadata as { from: string; to: string },
     );
@@ -429,7 +439,15 @@ describe('bokku operations', () => {
       'PAID->CONFIRMED',
       'CONFIRMED->PREPARING',
       'PREPARING->READY_FOR_PICKUP',
+      'READY_FOR_PICKUP->DELIVERY_REQUESTED',
     ]);
+    expect(await auditActions('delivery.dispatched')).toHaveLength(1);
+
+    // The delivery row exists, tied one-to-one to the order.
+    const rows = await sql`SELECT status, provider, external_id FROM deliveries`;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ status: 'REQUESTED', provider: 'MOCK' });
+    expect(rows[0]!.external_id).toMatch(/^mockdel_/);
   });
 
   it('rejects skips, repeats, and refund statuses set directly', async () => {

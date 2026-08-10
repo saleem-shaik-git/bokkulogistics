@@ -28,6 +28,22 @@ export const paymentStatusEnum = pgEnum('payment_status', [
   'REFUNDED',
 ]);
 
+export const deliveryProviderEnum = pgEnum('delivery_provider', ['MOCK', 'UBER', 'BOLT']);
+
+/**
+ * Courier lifecycle (spec): QUOTE exists only in-memory/cache — a row is
+ * born at REQUESTED (dispatch from READY_FOR_PICKUP).
+ */
+export const deliveryStatusEnum = pgEnum('delivery_status', [
+  'REQUESTED',
+  'DRIVER_ASSIGNED',
+  'DRIVER_ARRIVING',
+  'PICKED_UP',
+  'IN_TRANSIT',
+  'DELIVERED',
+  'CANCELLED',
+]);
+
 /**
  * The order state machine (spec): transitions are validated by
  * apps/api src/modules/orders/order-state.policy.ts — never set statuses

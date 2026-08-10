@@ -24,6 +24,8 @@ const TABS: Array<{ value: OrderStatus | 'ALL'; label: string }> = [
   { value: 'CONFIRMED', label: 'Confirmed' },
   { value: 'PREPARING', label: 'Preparing' },
   { value: 'READY_FOR_PICKUP', label: 'Ready' },
+  { value: 'DELIVERY_REQUESTED', label: 'Rider requested' },
+  { value: 'DRIVER_ASSIGNED', label: 'Rider assigned' },
   { value: 'OUT_FOR_DELIVERY', label: 'Delivering' },
   { value: 'DELIVERED', label: 'Delivered' },
   { value: 'CANCELLED', label: 'Cancelled' },
@@ -74,7 +76,9 @@ export default function BokkuOrdersPage() {
         </p>
       ) : orders.length === 0 ? (
         <p className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-400">
-          {tab === 'ALL' ? 'No orders yet.' : `No ${ORDER_STATUS_LABELS[tab].toLowerCase()} orders.`}
+          {tab === 'ALL'
+            ? 'No orders yet.'
+            : `No ${ORDER_STATUS_LABELS[tab].toLowerCase()} orders.`}
         </p>
       ) : (
         <>

@@ -1,4 +1,9 @@
-import type { Paginated, PublicOrderDetail, PublicOrderSummary } from '@bokku/shared';
+import type {
+  Paginated,
+  PublicDeliveryTracking,
+  PublicOrderDetail,
+  PublicOrderSummary,
+} from '@bokku/shared';
 
 import { authedRequest } from './authed-api';
 
@@ -23,4 +28,12 @@ export function fetchOrders(params: {
 
 export function fetchOrder(id: string): Promise<PublicOrderDetail> {
   return authedRequest<PublicOrderDetail>(`/orders/${encodeURIComponent(id)}`);
+}
+
+/**
+ * Courier tracking for my order. 404 DELIVERY_NOT_FOUND is NOT an error for
+ * callers — it just means nothing is dispatched yet (returns null).
+ */
+export function fetchOrderTracking(id: string): Promise<PublicDeliveryTracking> {
+  return authedRequest<PublicDeliveryTracking>(`/orders/${encodeURIComponent(id)}/tracking`);
 }

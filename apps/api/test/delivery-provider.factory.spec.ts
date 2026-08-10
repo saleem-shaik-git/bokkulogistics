@@ -10,6 +10,7 @@ import {
   MOCK_FALLBACK_DISTANCE_KM,
   MOCK_PER_KM_FEE_KOBO,
 } from '../src/integrations/delivery/mock-delivery.provider';
+import { createFakeRedis } from './fake-redis';
 
 /**
  * DeliveryProviderFactory chooses the concrete adapter from configuration —
@@ -18,7 +19,10 @@ import {
  */
 describe('DeliveryProviderFactory', () => {
   function factoryWith(provider: string): DeliveryProviderFactory {
-    return new DeliveryProviderFactory({ DELIVERY_DEFAULT_PROVIDER: provider } as EnvConfig);
+    return new DeliveryProviderFactory(
+      { DELIVERY_DEFAULT_PROVIDER: provider } as EnvConfig,
+      createFakeRedis(),
+    );
   }
 
   it('returns the mock provider by default', () => {
@@ -27,10 +31,10 @@ describe('DeliveryProviderFactory', () => {
     expect(provider).toBeInstanceOf(MockDeliveryProvider);
   });
 
-  it('fails fast for UBER/BOLT until their adapters exist (Phase 9)', () => {
+  it('fails fast for UBER/BOLT until real credentials are wired', () => {
     expect(() => factoryWith('UBER').create()).toThrowError(DeliveryIntegrationError);
-    expect(() => factoryWith('UBER').create()).toThrowError(/Phase 9/);
-    expect(() => factoryWith('BOLT').create()).toThrowError(/Phase 9/);
+    expect(() => factoryWith('UBER').create()).toThrowError(/not wired/);
+    expect(() => factoryWith('BOLT').create()).toThrowError(/not wired/);
   });
 
   it('fails clearly on an unknown provider value', () => {
@@ -39,7 +43,7 @@ describe('DeliveryProviderFactory', () => {
 });
 
 describe('MockDeliveryProvider quotes', () => {
-  const provider = new MockDeliveryProvider();
+  const provider = new MockDeliveryProvider(createFakeRedis());
 
   it('charges the flat base fee for a zero-distance quote', async () => {
     const point = { latitude: 6.5926, longitude: 3.2907 };
@@ -82,24 +86,5 @@ describe('MockDeliveryProvider quotes', () => {
     expect(
       computeDistanceKm({ latitude: 6.5, longitude: 3.2 }, { latitude: 6.5, longitude: 3.2 }),
     ).toBe(0);
-  });
-
-  it('keeps the dispatch lifecycle explicitly out of scope until Phase 9', async () => {
-    await expect(
-      provider.createDelivery({
-        reference: 'ORD-1',
-        pickup: { latitude: null, longitude: null, address: 'Store' },
-        dropoff: { latitude: null, longitude: null, address: 'Home' },
-      }),
-    ).rejects.toMatchObject({ code: 'DELIVERY_DISPATCH_NOT_IMPLEMENTED' });
-    await expect(provider.getDeliveryStatus('x')).rejects.toMatchObject({
-      code: 'DELIVERY_DISPATCH_NOT_IMPLEMENTED',
-    });
-    await expect(provider.cancelDelivery('x')).rejects.toMatchObject({
-      code: 'DELIVERY_DISPATCH_NOT_IMPLEMENTED',
-    });
-    await expect(provider.getTracking('x')).rejects.toMatchObject({
-      code: 'DELIVERY_DISPATCH_NOT_IMPLEMENTED',
-    });
   });
 });

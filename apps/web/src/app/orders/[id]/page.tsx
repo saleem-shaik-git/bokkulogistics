@@ -4,13 +4,15 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import {
+  DELIVERY_STATUS_LABELS,
   ORDER_PROGRESS_STEPS,
   ORDER_STATUS_LABELS,
   ORDER_TERMINAL_STATUSES,
   type OrderStatus,
+  type PublicDeliveryTracking,
 } from '@bokku/shared';
 
-import { useOrder } from '@/hooks/use-orders';
+import { useOrder, useOrderTracking } from '@/hooks/use-orders';
 import { ApiError } from '@/lib/api-client';
 import { formatKobo } from '@/lib/money';
 import { useAuthStore } from '@/stores/auth-store';
@@ -34,6 +36,7 @@ export default function OrderDetailPage() {
   }, [hydrated, user, router, orderId]);
 
   const orderQuery = useOrder(orderId);
+  const trackingQuery = useOrderTracking(orderId, orderQuery.data?.status);
 
   if (!hydrated || !user) {
     return <main className="mx-auto min-h-dvh w-full max-w-md px-5 py-10 sm:max-w-2xl" />;
@@ -73,6 +76,7 @@ export default function OrderDetailPage() {
   const order = orderQuery.data;
   const cancelled = order.status === 'CANCELLED' || order.status.startsWith('REFUND');
   const currentStep = ORDER_PROGRESS_STEPS.indexOf(order.status);
+  const tracking = trackingQuery.data ?? null;
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col gap-6 px-5 py-8 sm:max-w-2xl">
@@ -129,6 +133,8 @@ export default function OrderDetailPage() {
           )}
         </section>
       )}
+
+      {!cancelled && tracking && <CourierCard tracking={tracking} />}
 
       <section className="rounded-2xl border border-slate-200 bg-white">
         <h2 className="border-b border-slate-100 px-5 py-3 text-sm font-semibold text-slate-900">
@@ -212,6 +218,79 @@ function ProgressStep({
         {ORDER_STATUS_LABELS[step]}
       </p>
     </li>
+  );
+}
+
+function CourierCard({ tracking }: { tracking: PublicDeliveryTracking }) {
+  const delivered = tracking.status === 'DELIVERED';
+  const cancelledDelivery = tracking.status === 'CANCELLED';
+  // ETA is "minutes from dispatch" on the honored quote — show the remainder.
+  const etaRemaining =
+    tracking.etaMinutes !== null && !delivered && !cancelledDelivery
+      ? Math.max(
+          1,
+          Math.round(
+            tracking.etaMinutes - (Date.now() - new Date(tracking.dispatchedAt).getTime()) / 60_000,
+          ),
+        )
+      : null;
+
+  return (
+    <section
+      aria-label="Courier tracking"
+      className="rounded-2xl border border-brand-100 bg-brand-50 p-5"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-sm font-semibold text-slate-900">Courier</h2>
+        <span
+          className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+            delivered
+              ? 'bg-emerald-100 text-emerald-700'
+              : cancelledDelivery
+                ? 'bg-slate-200 text-slate-600'
+                : 'bg-brand-100 text-brand-700'
+          }`}
+        >
+          {DELIVERY_STATUS_LABELS[tracking.status]}
+        </span>
+      </div>
+      {etaRemaining !== null && (
+        <p className="mt-1 text-sm font-medium text-brand-700">Arriving in ~{etaRemaining} min</p>
+      )}
+      {tracking.courier ? (
+        <div className="mt-3 flex items-center justify-between gap-3 border-t border-brand-100 pt-3">
+          <div>
+            <p className="text-sm font-semibold text-slate-900">{tracking.courier.name}</p>
+            {tracking.courier.vehicle && (
+              <p className="text-xs text-slate-500">{tracking.courier.vehicle}</p>
+            )}
+          </div>
+          {!delivered && !cancelledDelivery && (
+            <a
+              href={`tel:${tracking.courier.phone}`}
+              className="rounded-xl border border-brand-100 bg-white px-3 py-1.5 text-xs font-semibold text-brand-700 hover:bg-brand-100"
+            >
+              Call rider
+            </a>
+          )}
+        </div>
+      ) : (
+        !cancelledDelivery && (
+          <p className="mt-2 text-sm text-slate-500">
+            We’re finding a rider near the store — this updates automatically.
+          </p>
+        )
+      )}
+      {delivered && tracking.deliveredAt && (
+        <p className="mt-2 text-xs text-slate-500">
+          Delivered{' '}
+          {new Date(tracking.deliveredAt).toLocaleString('en-NG', {
+            dateStyle: 'medium',
+            timeStyle: 'short',
+          })}
+        </p>
+      )}
+    </section>
   );
 }
 
