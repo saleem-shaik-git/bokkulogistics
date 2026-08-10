@@ -34,7 +34,11 @@ import {
 } from '@bokku/shared';
 
 import { DRIZZLE_CLIENT, ENV_CONFIG } from '../../config/constants';
-import { buildPaginationMeta, parsePagination, type PaginationQuery } from '../../common/pagination';
+import {
+  buildPaginationMeta,
+  parsePagination,
+  type PaginationQuery,
+} from '../../common/pagination';
 import { AuditService } from '../audit/audit.module';
 import { InventoryService, type DbTransaction } from '../inventory/inventory.service';
 import { OrderStatePolicy } from './order-state.policy';
@@ -279,10 +283,44 @@ export class OrdersService {
   }
 
   async getForStore(storeId: string, orderId: string): Promise<PublicOrderDetail> {
-    const order = await this.requireOrder(
-      and(eq(orders.id, orderId), eq(orders.storeId, storeId)),
-    );
+    const order = await this.requireOrder(and(eq(orders.id, orderId), eq(orders.storeId, storeId)));
     return this.toDetail(order);
+  }
+
+  // ── Platform admin surface (Phase 10): read-only, cross-store ──
+
+  async listAll(
+    query: PaginationQuery & { status?: string; storeId?: string },
+  ): Promise<Paginated<PublicOrderSummary>> {
+    const { page, limit, offset } = parsePagination(query);
+    const filters: SQL[] = [];
+    if (query.storeId) filters.push(eq(orders.storeId, query.storeId));
+    if (query.status && ORDER_STATUSES.includes(query.status as OrderStatus)) {
+      filters.push(eq(orders.status, query.status as OrderStatus));
+    }
+    const where = filters.length > 0 ? and(...filters) : undefined;
+    const [rows, countRows] = await Promise.all([
+      this.database.db
+        .select({ order: orders, itemCount: ITEM_COUNT_SQL })
+        .from(orders)
+        .leftJoin(orderItems, eq(orderItems.orderId, orders.id))
+        .where(where)
+        .groupBy(orders.id)
+        .orderBy(desc(orders.createdAt))
+        .limit(limit)
+        .offset(offset),
+      this.database.db.select({ total: count() }).from(orders).where(where),
+    ]);
+    const total = countRows[0]?.total ?? 0;
+    return {
+      data: rows.map((row) => this.toSummary(row.order, row.itemCount)),
+      meta: buildPaginationMeta(total, page, limit),
+    };
+  }
+
+  /** Read any order regardless of store (admin oversight — read-only). */
+  async getAny(orderId: string): Promise<PublicOrderDetail> {
+    return this.toDetail(await this.requireOrder(eq(orders.id, orderId)));
   }
 
   /** The raw row (bokku orchestration needs paymentId for refunds). */
@@ -298,9 +336,7 @@ export class OrdersService {
     reason: string | undefined,
     actor: User,
   ): Promise<PublicOrderDetail> {
-    const order = await this.requireOrder(
-      and(eq(orders.id, orderId), eq(orders.storeId, storeId)),
-    );
+    const order = await this.requireOrder(and(eq(orders.id, orderId), eq(orders.storeId, storeId)));
     OrderStatePolicy.assertTransition('STAFF', order.status, to);
 
     const updated = await this.database.db.transaction(async (tx) => {
@@ -317,9 +353,7 @@ export class OrdersService {
         .set({
           status: to,
           updatedAt: new Date(),
-          ...(to === 'CANCELLED'
-            ? { cancelledAt: new Date(), cancelReason: reason ?? null }
-            : {}),
+          ...(to === 'CANCELLED' ? { cancelledAt: new Date(), cancelReason: reason ?? null } : {}),
         })
         .where(eq(orders.id, order.id))
         .returning();
@@ -489,7 +523,10 @@ export class OrdersService {
       lineTotal: item.lineTotal,
     }));
     return {
-      ...this.toSummary(order, lines.reduce((sum, line) => sum + line.quantity, 0)),
+      ...this.toSummary(
+        order,
+        lines.reduce((sum, line) => sum + line.quantity, 0),
+      ),
       items: lines,
       deliveryAddress: order.deliveryAddress as unknown as PublicAddress,
       deliveryQuote: order.deliveryQuote as unknown as OrderDeliveryQuote,

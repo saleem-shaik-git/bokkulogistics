@@ -19,6 +19,7 @@ import { OrdersModule } from './modules/orders/orders.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { DeliveriesModule } from './modules/deliveries/deliveries.module';
 import { BokkuModule } from './modules/bokku/bokku.module';
+import { AdminModule } from './modules/admin/admin.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { BokkuModule } from './modules/bokku/bokku.module';
     PaymentsModule,
     DeliveriesModule,
     BokkuModule,
+    AdminModule,
   ],
   providers: [
     // Order matters: authenticate first, authorize second.

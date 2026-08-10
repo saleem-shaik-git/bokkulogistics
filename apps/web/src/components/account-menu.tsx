@@ -58,7 +58,17 @@ export function AccountMenu() {
         <p className="text-xs text-slate-400">
           <span className="capitalize">{user.role.toLowerCase().replace('_', ' ')}</span>
           {' · '}
-          {isStaffRole(user.role) ? (
+          {user.role === 'PLATFORM_ADMIN' ? (
+            <>
+              <Link href="/admin" className="font-medium text-brand-600 hover:underline">
+                Admin console
+              </Link>
+              {' · '}
+              <Link href="/bokku" className="font-medium text-brand-600 hover:underline">
+                Ops dashboard
+              </Link>
+            </>
+          ) : isStaffRole(user.role) ? (
             <Link href="/bokku" className="font-medium text-brand-600 hover:underline">
               Ops dashboard
             </Link>

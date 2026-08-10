@@ -53,6 +53,6 @@ modules/payments ──┘         ▲
 | 7 | Orders + state machine | ✅ complete |
 | 8 | Bokku operations dashboard | ✅ complete |
 | 9 | Delivery adapters | ✅ complete |
-| 10 | Admin | ⬜ |
+| 10 | Admin | ✅ complete |
 | 11 | Notifications | ⬜ |
 | 12 | Production hardening | ⬜ |

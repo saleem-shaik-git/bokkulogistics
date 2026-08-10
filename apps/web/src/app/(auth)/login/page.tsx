@@ -42,10 +42,17 @@ function LoginForm() {
     mutationFn: loginRequest,
     onSuccess: (data) => {
       setSession(data.user, data.tokens);
-      // Explicit ?next= wins; otherwise staff land in the ops workspace,
-      // customers on the storefront.
+      // Explicit ?next= wins; otherwise platform admins land in the admin
+      // console, store staff in the ops workspace, customers on the storefront.
       const target = safeNextPath(searchParams.get('next'));
-      router.push(target ?? (isStaffRole(data.user.role) ? '/bokku' : '/'));
+      router.push(
+        target ??
+          (data.user.role === 'PLATFORM_ADMIN'
+            ? '/admin'
+            : isStaffRole(data.user.role)
+              ? '/bokku'
+              : '/'),
+      );
     },
   });
 

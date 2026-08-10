@@ -77,3 +77,4 @@ export * from './payments';
 export * from './orders';
 export * from './delivery';
 export * from './bokku';
+export * from './admin';

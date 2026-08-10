@@ -281,6 +281,47 @@ workers in the MVP).
   tracking payloads. `UBER`/`BOLT` fail loudly with
   `DELIVERY_PROVIDER_NOT_CONFIGURED` at boot until real adapters land.
 
+## Platform admin (Phase 10)
+
+`PLATFORM_ADMIN`-only surface (`@Roles('PLATFORM_ADMIN')` on the whole
+controller; every route also requires auth as usual). Cross-store by
+design — fulfillment actions stay in `/bokku`; admin reads are
+oversight, and the only mutations are user role/status changes.
+
+- `GET /admin/dashboard` — platform aggregates: orders/revenue for the
+  UTC day and all time (revenue = collected, excluding cancel/refund
+  states), orders by status, deliveries by courier status (`activeDeliveries`
+  = non-terminal), users by role + `newUsersToday` + `suspendedUsers`,
+  store totals.
+- `GET /admin/users?role=&status=&q=&page&limit=` — paginated user list;
+  `q` is a case-insensitive email/name search (ILIKE metacharacters
+  escaped); soft-deleted accounts are excluded.
+- `PATCH /admin/users/:id/role` `{ role, reason? }` — audited
+  (`admin.user_role_changed`). Single-store rule: promoting to
+  STORE_MANAGER/BOKKU_ADMIN creates the BOKKU `store_staff` membership;
+  demoting away from staff roles removes memberships.
+- `PATCH /admin/users/:id/status` `{ status: ACTIVE|SUSPENDED, reason? }` —
+  audited (`admin.user_status_changed`). Suspension is effective on the
+  target's **next request** because the global JWT guard re-loads the
+  account status per call (no token-revocation plumbing).
+- Both mutations: 404 `USER_NOT_FOUND`; 409 `ADMIN_SELF_MODIFICATION` on
+  your own account; 409 `ADMIN_LAST_PLATFORM_ADMIN` when the change would
+  remove the last active platform admin (defense in depth). Repeat calls
+  are idempotent 200 no-ops (no duplicate audit rows).
+- `GET /admin/stores` — every store with staff/product counts and today's
+  order/revenue numbers.
+- `GET /admin/orders?status=&storeId=&page&limit=` and
+  `GET /admin/orders/:id` — cross-store order reads (404-scoped).
+- `GET /admin/audit-logs?action=&actorId=&from=&to=&page&limit=` — the audit
+  trail, newest first, joined with the acting user; `action` is a prefix
+  filter (`order` ⇒ `order.*`).
+- The **web console at `/admin`** (platform-admin shell): overview cards,
+  user management (search/filters + inline role select and
+  suspend/reactivate), stores, cross-store orders (rows deep-link to the
+  ops detail in `/bokku`), and the audit reader with expandable metadata.
+  Platform admins land here after login; the account menu links both
+  consoles.
+
 ## Security defaults
 
 Helmet headers, CORS (open in dev, origin-locked via `CORS_ORIGINS` in
