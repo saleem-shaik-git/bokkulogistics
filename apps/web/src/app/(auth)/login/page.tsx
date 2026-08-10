@@ -9,14 +9,15 @@ import { useForm } from 'react-hook-form';
 import { loginSchema, type LoginInput } from '@bokku/validation';
 
 import { TextField } from '@/components/forms/text-field';
+import { isStaffRole } from '@/hooks/use-bokku';
 import { ApiError } from '@/lib/api-client';
 import { login as loginRequest } from '@/lib/auth-api';
 import { useAuthStore } from '@/stores/auth-store';
 
 /** Same-origin paths only — never let ?next= become an open redirect. */
-function safeNextPath(next: string | null): string {
+function safeNextPath(next: string | null): string | null {
   if (next && next.startsWith('/') && !next.startsWith('//')) return next;
-  return '/';
+  return null;
 }
 
 export default function LoginPage() {
@@ -41,7 +42,10 @@ function LoginForm() {
     mutationFn: loginRequest,
     onSuccess: (data) => {
       setSession(data.user, data.tokens);
-      router.push(safeNextPath(searchParams.get('next')));
+      // Explicit ?next= wins; otherwise staff land in the ops workspace,
+      // customers on the storefront.
+      const target = safeNextPath(searchParams.get('next'));
+      router.push(target ?? (isStaffRole(data.user.role) ? '/bokku' : '/'));
     },
   });
 

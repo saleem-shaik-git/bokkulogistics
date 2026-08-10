@@ -76,6 +76,18 @@ export class BokkuCatalogueController {
     return this.bokku.updateProduct(store, id, dto, actor);
   }
 
+  // ── Dashboard (Phase 8) ─────────────────────────────────────────
+  @Get('dashboard')
+  @ApiOperation({
+    summary: 'Ops overview for the store',
+    description:
+      'Headline numbers for the dashboard: today’s orders/revenue (UTC day, revenue is ' +
+      'collected-and-not-refunded), pending fulfillment, per-status counts and low-stock alerts.',
+  })
+  dashboard(@CurrentStore() store: Store) {
+    return this.bokku.getDashboard(store);
+  }
+
   // ── Orders (Phase 7) ────────────────────────────────────────────
   @Get('orders')
   @ApiOperation({

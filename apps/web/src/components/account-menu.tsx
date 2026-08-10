@@ -4,6 +4,7 @@ import { useMutation } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
+import { isStaffRole } from '@/hooks/use-bokku';
 import { logout as logoutRequest } from '@/lib/auth-api';
 import { useAuthStore } from '@/stores/auth-store';
 
@@ -57,9 +58,15 @@ export function AccountMenu() {
         <p className="text-xs text-slate-400">
           <span className="capitalize">{user.role.toLowerCase().replace('_', ' ')}</span>
           {' · '}
-          <Link href="/orders" className="font-medium text-brand-600 hover:underline">
-            My orders
-          </Link>
+          {isStaffRole(user.role) ? (
+            <Link href="/bokku" className="font-medium text-brand-600 hover:underline">
+              Ops dashboard
+            </Link>
+          ) : (
+            <Link href="/orders" className="font-medium text-brand-600 hover:underline">
+              My orders
+            </Link>
+          )}
         </p>
       </div>
       <button

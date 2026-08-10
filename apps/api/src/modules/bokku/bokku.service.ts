@@ -1,8 +1,9 @@
 import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { and, count, desc, eq, isNull } from 'drizzle-orm';
+import { and, count, desc, eq, gte, isNull, notInArray, sql } from 'drizzle-orm';
 import {
   categories,
   inventory,
+  orders,
   payments,
   products,
   type DatabaseConnection,
@@ -10,7 +11,13 @@ import {
   type Store,
   type User,
 } from '@bokku/database';
-import type { Paginated, PublicOrderDetail, PublicOrderSummary } from '@bokku/shared';
+import type {
+  OpsDashboardSummary,
+  OrderStatus,
+  Paginated,
+  PublicOrderDetail,
+  PublicOrderSummary,
+} from '@bokku/shared';
 
 import { DRIZZLE_CLIENT } from '../../config/constants';
 import { AuditService } from '../audit/audit.module';
@@ -20,10 +27,22 @@ import {
   type PaginationQuery,
 } from '../../common/pagination';
 import { slugify, withSuffix } from '../../common/utils/slugify';
+import { InventoryService } from '../inventory/inventory.service';
 import { OrdersService } from '../orders/orders.service';
 import type { ListOrdersQuery, TransitionOrderStatusDto } from '../orders/dto/orders.dto';
 import { PaymentsService } from '../payments/payments.service';
 import type { CreateProductDto, UpdateProductDto } from './dto/bokku.dto';
+
+/** Paid-and-not-yet-terminal work — the ops queue. */
+const PENDING_FULFILLMENT_STATUSES: ReadonlySet<OrderStatus> = new Set([
+  'PAID',
+  'CONFIRMED',
+  'PREPARING',
+  'READY_FOR_PICKUP',
+  'DELIVERY_REQUESTED',
+  'DRIVER_ASSIGNED',
+  'OUT_FOR_DELIVERY',
+]);
 
 /** Catalogue + order management for the Bokku operations dashboard. */
 @Injectable()
@@ -35,6 +54,7 @@ export class BokkuService {
     private readonly audit: AuditService,
     private readonly orders: OrdersService,
     private readonly paymentsService: PaymentsService,
+    private readonly inventoryService: InventoryService,
   ) {}
 
   async listProducts(store: Store, query: PaginationQuery): Promise<Paginated<Product>> {
@@ -205,6 +225,64 @@ export class BokkuService {
       current = (current as { cause?: unknown }).cause;
     }
     return false;
+  }
+
+  // ── Dashboard (Phase 8) ─────────────────────────────────────────
+
+  /**
+   * Ops overview headline numbers for the store. "Today" is the UTC
+   * calendar day (documented contract); revenue counts money actually
+   * collected (paid) and not cancelled/refunded.
+   */
+  async getDashboard(store: Store): Promise<OpsDashboardSummary> {
+    const startOfToday = new Date();
+    startOfToday.setUTCHours(0, 0, 0, 0);
+
+    const revenueLostStatuses: OrderStatus[] = ['CANCELLED', 'REFUND_PENDING', 'REFUNDED'];
+    const [todayRows, byStatus, stock] = await Promise.all([
+      this.database.db
+        .select({
+          todayOrders:
+            sql<number>`count(*) filter (where ${gte(orders.createdAt, startOfToday)})`.mapWith(
+              Number,
+            ),
+          todayRevenue:
+            sql<number>`coalesce(sum(${orders.total}) filter (where ${gte(orders.paidAt, startOfToday)} and ${notInArray(orders.status, revenueLostStatuses)}), 0)`.mapWith(
+              Number,
+            ),
+        })
+        .from(orders)
+        .where(eq(orders.storeId, store.id)),
+      this.database.db
+        .select({ status: orders.status, n: count() })
+        .from(orders)
+        .where(eq(orders.storeId, store.id))
+        .groupBy(orders.status),
+      this.inventoryService.listForStore(store.id),
+    ]);
+
+    const ordersByStatus: Partial<Record<OrderStatus, number>> = {};
+    let pendingFulfillment = 0;
+    for (const row of byStatus) {
+      ordersByStatus[row.status] = row.n;
+      if (PENDING_FULFILLMENT_STATUSES.has(row.status)) pendingFulfillment += row.n;
+    }
+
+    const alerts = stock
+      .filter((row) => row.lowStock || row.sellable <= 0)
+      .sort((a, b) => a.sellable - b.sellable || a.productName.localeCompare(b.productName));
+
+    return {
+      store: { id: store.id, name: store.name, code: store.code },
+      todayOrders: todayRows[0]?.todayOrders ?? 0,
+      todayRevenue: todayRows[0]?.todayRevenue ?? 0,
+      pendingFulfillment,
+      outForDelivery: ordersByStatus['OUT_FOR_DELIVERY'] ?? 0,
+      ordersByStatus,
+      lowStockCount: stock.filter((row) => row.lowStock && row.sellable > 0).length,
+      outOfStockCount: stock.filter((row) => row.sellable <= 0).length,
+      lowStockAlerts: alerts.slice(0, 5),
+    };
   }
 
   // ── Order operations (Phase 7) ──────────────────────────────────

@@ -223,6 +223,22 @@ DELIVERED, SYSTEM-only — Phase 9), CANCELLED→REFUND_PENDING→REFUNDED
 (SYSTEM-only). Customers may only cancel before payment. Terminal:
 DELIVERED, CANCELLED, REFUNDED.
 
+## Operations dashboard (Phase 8)
+
+- `GET /bokku/dashboard` (staff gates as above) — headline numbers for the
+  ops workspace: `todayOrders` / `todayRevenue` (UTC calendar day; revenue
+  = collected and not cancelled/refunded), `pendingFulfillment`
+  (PAID→OUT_FOR_DELIVERY), `outForDelivery`, all-time `ordersByStatus`
+  counts, `lowStockCount` / `outOfStockCount` and the five most severe
+  `lowStockAlerts` (worst sellable first).
+- The **web workspace at `/bokku`** (staff-only shell; the API enforces the
+  gates regardless): Overview with the dashboard cards, the order queue
+  (status tabs + one-click legal next step + cancel/refund with a required
+  reason), product management (list/create/edit, Naira ⇄ kobo at the API
+  boundary), and inventory (on hand/reserved/sellable with flags, audited
+  set/delta adjustments). Staff sign-in routes here by default; customers
+  are bounced back to the storefront.
+
 ## Security defaults
 
 Helmet headers, CORS (open in dev, origin-locked via `CORS_ORIGINS` in
