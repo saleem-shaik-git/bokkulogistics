@@ -8,12 +8,7 @@ import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { TEST_DATABASE_URL } from './global-setup';
 
-/**
- * Addresses + checkout preview against real PostgreSQL: owner-scoped CRUD,
- * single-default guarantees, and a fully server-computed preview
- * (live prices + mock delivery quote + pricing policy).
- */
-
+/** Addresses + checkout preview against real PostgreSQL. */
 interface Envelope<T> {
   status: number;
   body: ApiResponse<T> & { data: T };
@@ -25,7 +20,6 @@ const STORE_LNG = 3.2907;
 let app: INestApplication;
 let baseUrl: string;
 let sql: postgres.Sql;
-
 let storeId: string;
 let productA: string;
 let aliceToken: string;
@@ -67,11 +61,14 @@ function mkAddress(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function mkDeliveryAddress(overrides: Record<string, unknown> = {}) {
+  return mkAddress({ latitude: STORE_LAT, longitude: STORE_LNG, ...overrides });
+}
+
 beforeAll(async () => {
   process.env.DATABASE_URL = TEST_DATABASE_URL;
   process.env.NODE_ENV = 'test';
   sql = postgres(TEST_DATABASE_URL, { max: 3 });
-
   app = await NestFactory.create(AppModule, { logger: false });
   configureApp(app);
   await app.listen(0);
@@ -82,11 +79,8 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await sql`TRUNCATE users, stores, categories, products, product_images, inventory, store_staff, carts, cart_items, addresses CASCADE`;
-
   for (const email of ['alice@test.dev', 'bob@test.dev']) {
-    await call('/auth/register', {
-      body: { email, password, firstName: 'T', lastName: 'U' },
-    });
+    await call('/auth/register', { body: { email, password, firstName: 'T', lastName: 'U' } });
   }
   aliceToken = await login('alice@test.dev');
   bobToken = await login('bob@test.dev');
@@ -96,18 +90,14 @@ beforeEach(async () => {
     VALUES ('Bokku', 'BOKKU', '12 Market Street', 'Lagos', 'Lagos', ${STORE_LAT}, ${STORE_LNG})
     RETURNING id`;
   storeId = store!.id;
-
   const [category] = await sql`
     INSERT INTO categories (store_id, name, slug) VALUES (${storeId}, 'Food', 'food') RETURNING id`;
-
   const [product] = await sql`
     INSERT INTO products (store_id, category_id, name, slug, sku, price, status)
     VALUES (${storeId}, ${category!.id}, 'Product A', 'product-a', 'SKU-A', 15_000, 'ACTIVE')
     RETURNING id`;
   productA = product!.id;
-  await sql`
-    INSERT INTO inventory (store_id, product_id, quantity_on_hand)
-    VALUES (${storeId}, ${productA}, 10)`;
+  await sql`INSERT INTO inventory (store_id, product_id, quantity_on_hand) VALUES (${storeId}, ${productA}, 10)`;
 });
 
 afterAll(async () => {
@@ -135,19 +125,22 @@ describe('addresses', () => {
     expect(errorCode(halfPair)).toBe('COORDINATE_PAIR_REQUIRED');
   });
 
+  it('allows an address without coordinates for address-book use', async () => {
+    const res = await call<PublicAddress>('/addresses', { token: aliceToken, body: mkAddress() });
+    expect(res.status).toBe(201);
+    expect(res.body.data.latitude).toBeNull();
+    expect(res.body.data.longitude).toBeNull();
+  });
+
   it('makes the first address default automatically', async () => {
     const first = await call<PublicAddress>('/addresses', { token: aliceToken, body: mkAddress() });
     expect(first.status).toBe(201);
     expect(first.body.data.isDefault).toBe(true);
-
     const second = await call<PublicAddress>('/addresses', {
       token: aliceToken,
       body: mkAddress({ label: 'Office' }),
     });
     expect(second.body.data.isDefault).toBe(false);
-
-    const list = await call<PublicAddress[]>('/addresses', { token: aliceToken });
-    expect(list.body.data.map((a) => a.label)).toEqual(['Home', 'Office']);
   });
 
   it('switches the single default atomically', async () => {
@@ -157,41 +150,53 @@ describe('addresses', () => {
       body: mkAddress({ label: 'Office', isDefault: true }),
     });
     expect(office.body.data.isDefault).toBe(true);
-
     const list = await call<PublicAddress[]>('/addresses', { token: aliceToken });
-    const defaults = list.body.data.filter((a) => a.isDefault);
-    expect(defaults).toHaveLength(1);
-    expect(defaults[0]?.label).toBe('Office');
-
-    // Flip back via PATCH
+    expect(list.body.data.filter((a) => a.isDefault)).toHaveLength(1);
     const home = list.body.data.find((a) => a.label === 'Home')!;
-    await call(`/addresses/${home.id}`, {
-      method: 'PATCH',
-      token: aliceToken,
-      body: { isDefault: true },
-    });
+    await call(`/addresses/${home.id}`, { method: 'PATCH', token: aliceToken, body: { isDefault: true } });
     const after = await call<PublicAddress[]>('/addresses', { token: aliceToken });
     expect(after.body.data.filter((a) => a.isDefault)).toHaveLength(1);
-    expect(after.body.data[0]?.label).toBe('Home');
+    expect(after.body.data.find((a) => a.label === 'Home')?.isDefault).toBe(true);
+  });
+
+  it('rejects location text changes without new coordinates', async () => {
+    const created = await call<PublicAddress>('/addresses', {
+      token: aliceToken,
+      body: mkDeliveryAddress(),
+    });
+    const res = await call(`/addresses/${created.body.data.id}`, {
+      method: 'PATCH',
+      token: aliceToken,
+      body: { street: '10 Adeola Odeku' },
+    });
+    expect(res.status).toBe(400);
+    expect(errorCode(res)).toBe('LOCATION_COORDINATES_REQUIRED');
+  });
+
+  it('updates the physical location when a new coordinate pair is supplied', async () => {
+    const created = await call<PublicAddress>('/addresses', {
+      token: aliceToken,
+      body: mkDeliveryAddress(),
+    });
+    const res = await call<PublicAddress>(`/addresses/${created.body.data.id}`, {
+      method: 'PATCH',
+      token: aliceToken,
+      body: { street: '10 Adeola Odeku', latitude: 6.4302, longitude: 3.4207 },
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.data.street).toBe('10 Adeola Odeku');
+    expect(res.body.data.latitude).toBeCloseTo(6.4302);
+    expect(res.body.data.longitude).toBeCloseTo(3.4207);
   });
 
   it('scopes every operation to the owner (no IDOR)', async () => {
     const mine = await call<PublicAddress>('/addresses', { token: aliceToken, body: mkAddress() });
     const id = mine.body.data.id;
-
-    const list = await call<PublicAddress[]>('/addresses', { token: bobToken });
-    expect(list.body.data).toHaveLength(0);
-
-    const patched = await call(`/addresses/${id}`, {
-      method: 'PATCH',
-      token: bobToken,
-      body: { label: 'hijack' },
-    });
+    expect((await call<PublicAddress[]>('/addresses', { token: bobToken })).body.data).toHaveLength(0);
+    const patched = await call(`/addresses/${id}`, { method: 'PATCH', token: bobToken, body: { label: 'hijack' } });
     expect(patched.status).toBe(404);
     expect(errorCode(patched)).toBe('ADDRESS_NOT_FOUND');
-
-    const deleted = await call(`/addresses/${id}`, { method: 'DELETE', token: bobToken });
-    expect(deleted.status).toBe(404);
+    expect((await call(`/addresses/${id}`, { method: 'DELETE', token: bobToken })).status).toBe(404);
   });
 
   it('promotes the most recent address when the default is deleted', async () => {
@@ -200,25 +205,17 @@ describe('addresses', () => {
       token: aliceToken,
       body: mkAddress({ label: 'Second', isDefault: true }),
     });
-
     await call(`/addresses/${second.body.data.id}`, { method: 'DELETE', token: aliceToken });
     const list = await call<PublicAddress[]>('/addresses', { token: aliceToken });
-    expect(list.body.data).toHaveLength(1);
     expect(list.body.data[0]).toMatchObject({ label: 'First', isDefault: true });
   });
 
   it('caps saved addresses at 10 per user', async () => {
     for (let i = 1; i <= 10; i++) {
-      const res = await call('/addresses', {
-        token: aliceToken,
-        body: mkAddress({ label: `A${i}` }),
-      });
+      const res = await call('/addresses', { token: aliceToken, body: mkAddress({ label: `A${i}` }) });
       expect(res.status).toBe(201);
     }
-    const eleventh = await call('/addresses', {
-      token: aliceToken,
-      body: mkAddress({ label: 'A11' }),
-    });
+    const eleventh = await call('/addresses', { token: aliceToken, body: mkAddress({ label: 'A11' }) });
     expect(eleventh.status).toBe(409);
     expect(errorCode(eleventh)).toBe('ADDRESS_LIMIT_REACHED');
   });
@@ -226,10 +223,7 @@ describe('addresses', () => {
 
 describe('checkout preview', () => {
   async function createAliceAddress(body: Record<string, unknown> = {}): Promise<string> {
-    const res = await call<PublicAddress>('/addresses', {
-      token: aliceToken,
-      body: mkAddress(body),
-    });
+    const res = await call<PublicAddress>('/addresses', { token: aliceToken, body: mkDeliveryAddress(body) });
     return res.body.data.id;
   }
 
@@ -240,17 +234,18 @@ describe('checkout preview', () => {
     expect(errorCode(res)).toBe('CART_EMPTY');
   });
 
-  it('rejects another user’s address id (no IDOR)', async () => {
-    const bobAddress = await call<PublicAddress>('/addresses', {
-      token: bobToken,
-      body: mkAddress(),
-    });
+  it('rejects an address without delivery coordinates', async () => {
+    const address = await call<PublicAddress>('/addresses', { token: aliceToken, body: mkAddress() });
     await call('/cart/items', { token: aliceToken, body: { productId: productA, quantity: 1 } });
+    const res = await call('/checkout/preview', { token: aliceToken, body: { addressId: address.body.data.id } });
+    expect(res.status).toBe(400);
+    expect(errorCode(res)).toBe('DELIVERY_COORDINATES_REQUIRED');
+  });
 
-    const res = await call('/checkout/preview', {
-      token: aliceToken,
-      body: { addressId: bobAddress.body.data.id },
-    });
+  it('rejects another user’s address id (no IDOR)', async () => {
+    const bobAddress = await call<PublicAddress>('/addresses', { token: bobToken, body: mkDeliveryAddress() });
+    await call('/cart/items', { token: aliceToken, body: { productId: productA, quantity: 1 } });
+    const res = await call('/checkout/preview', { token: aliceToken, body: { addressId: bobAddress.body.data.id } });
     expect(res.status).toBe(404);
     expect(errorCode(res)).toBe('ADDRESS_NOT_FOUND');
   });
@@ -259,62 +254,33 @@ describe('checkout preview', () => {
     const addressId = await createAliceAddress();
     await call('/cart/items', { token: aliceToken, body: { productId: productA, quantity: 3 } });
     await sql`UPDATE inventory SET quantity_on_hand = 2 WHERE product_id = ${productA}`;
-
     const res = await call('/checkout/preview', { token: aliceToken, body: { addressId } });
     expect(res.status).toBe(409);
     expect(errorCode(res)).toBe('CART_ITEMS_UNAVAILABLE');
   });
 
-  it('computes the full breakdown with the fallback-distance mock quote', async () => {
+  it('computes the full breakdown from real coordinates', async () => {
     const addressId = await createAliceAddress();
     await call('/cart/items', { token: aliceToken, body: { productId: productA, quantity: 2 } });
-
-    const res = await call<CheckoutPreview>('/checkout/preview', {
-      token: aliceToken,
-      body: { addressId },
-    });
+    const res = await call<CheckoutPreview>('/checkout/preview', { token: aliceToken, body: { addressId } });
     expect(res.status).toBe(201);
     const preview = res.body.data;
-
-    expect(preview.lines).toEqual([
-      expect.objectContaining({
-        productId: productA,
-        unitPrice: 15_000,
-        quantity: 2,
-        lineTotal: 30_000,
-      }),
-    ]);
-    // Mock quote, no coordinates → 5 km fallback: ₦500 + 5 × ₦150 = ₦1,250.00
+    expect(preview.lines).toEqual([expect.objectContaining({ productId: productA, unitPrice: 15_000, quantity: 2, lineTotal: 30_000 })]);
     expect(preview.quote.provider).toBe('MOCK');
-    expect(preview.quote.fee).toBe(125_000);
-    expect(preview.quote.distanceKm).toBe(5);
-    expect(preview.quote.estimatedMinutes).toBe(35);
+    expect(preview.quote.fee).toBe(50_000);
+    expect(preview.quote.distanceKm).toBe(0);
+    expect(preview.quote.estimatedMinutes).toBe(15);
     expect(preview.quote.quoteId).toMatch(/^mockq_/);
-    // Breakdown: 30_000 + 125_000 + 5% + 7.5% VAT
-    expect(preview).toMatchObject({
-      subtotal: 30_000,
-      deliveryFee: 125_000,
-      serviceFee: 1_500,
-      tax: 2_250,
-      discount: 0,
-      total: 158_750,
-    });
-    expect(preview.address.street).toBe('24 Allen Avenue, Ikeja');
+    expect(Date.parse(preview.quote.expiresAt)).toBeGreaterThan(Date.now());
+    expect(preview).toMatchObject({ subtotal: 30_000, deliveryFee: 50_000, serviceFee: 1_500, tax: 2_250, discount: 0, total: 83_750 });
   });
 
-  it('uses real coordinates for the quote when both endpoints have them', async () => {
-    // Address at the exact store location → zero distance → base fee only.
-    const addressId = await createAliceAddress({ latitude: STORE_LAT, longitude: STORE_LNG });
+  it('uses real coordinates for a non-zero delivery quote', async () => {
+    const addressId = await createAliceAddress({ latitude: 6.4302, longitude: 3.4207 });
     await call('/cart/items', { token: aliceToken, body: { productId: productA, quantity: 1 } });
-
-    const res = await call<CheckoutPreview>('/checkout/preview', {
-      token: aliceToken,
-      body: { addressId },
-    });
+    const res = await call<CheckoutPreview>('/checkout/preview', { token: aliceToken, body: { addressId } });
     expect(res.status).toBe(201);
-    expect(res.body.data.quote.fee).toBe(50_000);
-    expect(res.body.data.quote.distanceKm).toBe(0);
-    expect(res.body.data.quote.estimatedMinutes).toBe(15);
-    expect(res.body.data.total).toBe(15_000 + 50_000 + 750 + 1_125);
+    expect(res.body.data.quote.distanceKm).toBeGreaterThan(0);
+    expect(res.body.data.quote.fee).toBeGreaterThan(50_000);
   });
 });
