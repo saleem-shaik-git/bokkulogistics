@@ -12,11 +12,6 @@ import { ADDRESSES_MAX_PER_USER, type PublicAddress } from '@bokku/shared';
 import { DRIZZLE_CLIENT } from '../../config/constants';
 import type { CreateAddressDto, UpdateAddressDto } from './dto/addresses.dto';
 
-/**
- * Saved delivery addresses. Owner-scoped throughout — an id that isn't the
- * caller's simply doesn't exist (404, no IDOR). The single-default rule is
- * guarded by a partial unique index AND flipped transactionally here.
- */
 @Injectable()
 export class AddressesService {
   constructor(@Inject(DRIZZLE_CLIENT) private readonly database: DatabaseConnection) {}
@@ -44,7 +39,6 @@ export class AddressesService {
           message: `You can save at most ${ADDRESSES_MAX_PER_USER} addresses`,
         });
       }
-      // The first address always becomes the default one.
       const makeDefault = existing.length === 0 || dto.isDefault === true;
       if (makeDefault && existing.length > 0) {
         await tx
@@ -76,6 +70,19 @@ export class AddressesService {
 
     return this.database.db.transaction(async (tx) => {
       const owned = await this.findOwned(userId, id, tx);
+      const textLocationChanged =
+        (dto.street !== undefined && dto.street !== owned.street) ||
+        (dto.city !== undefined && dto.city !== owned.city) ||
+        (dto.state !== undefined && dto.state !== owned.state);
+
+      // Never leave GPS coordinates pointing at the old physical address.
+      // A text-location change must be accompanied by a new coordinate pair.
+      if (textLocationChanged && (dto.latitude === undefined || dto.longitude === undefined)) {
+        throw new BadRequestException({
+          code: 'LOCATION_COORDINATES_REQUIRED',
+          message: 'Street, city, or state changes require a new latitude/longitude pair',
+        });
+      }
 
       if (dto.isDefault === true && !owned.isDefault) {
         await tx
@@ -103,7 +110,6 @@ export class AddressesService {
     });
   }
 
-  /** Deleting the default address promotes the most recent remaining one. */
   async remove(userId: string, id: string): Promise<{ deleted: boolean }> {
     await this.database.db.transaction(async (tx) => {
       const owned = await this.findOwned(userId, id, tx);
@@ -127,7 +133,6 @@ export class AddressesService {
     return { deleted: true };
   }
 
-  /** Owner-scoped lookup shared with checkout (404 — never 403 for IDs). */
   async findOwned(
     userId: string,
     id: string,
