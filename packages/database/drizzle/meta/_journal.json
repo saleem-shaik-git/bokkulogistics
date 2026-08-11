@@ -11,6 +11,7 @@
     {"idx": 6, "version": "7", "when": 1786317554524, "tag": "0006_large_talkback", "breakpoints": true},
     {"idx": 7, "version": "7", "when": 1786321271530, "tag": "0007_motionless_supreme_intelligence", "breakpoints": true},
     {"idx": 8, "version": "7", "when": 1786326479474, "tag": "0008_notify_feed", "breakpoints": true},
-    {"idx": 9, "version": "7", "when": 1786400000000, "tag": "0009_financial_integrity", "breakpoints": true}
+    {"idx": 9, "version": "7", "when": 1786400000000, "tag": "0009_financial_integrity", "breakpoints": true},
+    {"idx": 10, "version": "7", "when": 1786480000000, "tag": "0010_refund_state", "breakpoints": true}
   ]
 }
