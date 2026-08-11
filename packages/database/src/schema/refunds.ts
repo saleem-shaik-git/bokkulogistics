@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { check, index, integer, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 
 import { payments } from './payments';
@@ -23,12 +24,12 @@ export const refunds = pgTable(
     uniqueIndex('refunds_payment_unique').on(table.paymentId),
     uniqueIndex('refunds_provider_reference_unique')
       .on(table.providerReference)
-      .where(text`provider_reference IS NOT NULL`),
+      .where(sql`${table.providerReference} IS NOT NULL`),
     index('refunds_status_idx').on(table.status),
-    check('refunds_amount_positive', text`${table.amount} > 0`),
+    check('refunds_amount_positive', sql`${table.amount} > 0`),
     check(
       'refunds_status_valid',
-      text`${table.status} IN ('REQUESTED', 'PENDING', 'PROCESSING', 'NEEDS_ATTENTION', 'PROCESSED', 'FAILED')`,
+      sql`${table.status} IN ('REQUESTED', 'PENDING', 'PROCESSING', 'NEEDS_ATTENTION', 'PROCESSED', 'FAILED')`,
     ),
   ],
 );
