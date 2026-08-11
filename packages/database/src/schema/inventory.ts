@@ -4,27 +4,12 @@ import { check, index, integer, pgTable, timestamp, uniqueIndex, uuid } from 'dr
 import { products } from './products';
 import { stores } from './stores';
 
-/**
- * Stock authority per (store, product).
- *
- * quantityOnHand: physical units at the store.
- * reservedQuantity: units reserved by orders not yet fulfilled (Phase 7).
- * sellable = quantityOnHand - reservedQuantity.
- *
- * Race safety: all adjustments go through conditional atomic UPDATEs
- * (`... WHERE quantity_on_hand + delta >= 0`) — the database is the guard;
- * stock can never go negative even under concurrent checkouts.
- */
 export const inventory = pgTable(
   'inventory',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    storeId: uuid('store_id')
-      .notNull()
-      .references(() => stores.id, { onDelete: 'cascade' }),
-    productId: uuid('product_id')
-      .notNull()
-      .references(() => products.id, { onDelete: 'cascade' }),
+    storeId: uuid('store_id').notNull().references(() => stores.id, { onDelete: 'cascade' }),
+    productId: uuid('product_id').notNull().references(() => products.id, { onDelete: 'cascade' }),
     quantityOnHand: integer('quantity_on_hand').notNull().default(0),
     reservedQuantity: integer('reserved_quantity').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -35,6 +20,7 @@ export const inventory = pgTable(
     index('inventory_product_idx').on(table.productId),
     check('inventory_on_hand_non_negative', sql`${table.quantityOnHand} >= 0`),
     check('inventory_reserved_non_negative', sql`${table.reservedQuantity} >= 0`),
+    check('inventory_reserved_not_above_on_hand', sql`${table.reservedQuantity} <= ${table.quantityOnHand}`),
   ],
 );
 
