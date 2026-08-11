@@ -19,16 +19,15 @@ import {
   PaymentReferenceParamDto,
 } from './dto/payments.dto';
 import { PaymentsService } from './payments.service';
+import { RefundsService } from './refunds.service';
 
-/**
- * Payments. Amounts are computed server-side only (checkout preview);
- * confirmation comes only from server-side verification with the provider —
- * the webhook drives it, client redirects never mark anything paid.
- */
 @ApiTags('Payments')
 @Controller('payments')
 export class PaymentsController {
-  constructor(private readonly payments: PaymentsService) {}
+  constructor(
+    private readonly payments: PaymentsService,
+    private readonly refunds: RefundsService,
+  ) {}
 
   @Post('initialize')
   @RateLimit({ bucket: 'sensitive' })
@@ -36,10 +35,7 @@ export class PaymentsController {
   @ApiOperation({
     summary: 'Initialize a payment for the current cart',
     description:
-      'Recomputes the checkout preview server-side and creates (or idempotently reuses) the ' +
-      'pending transaction: same cart + same total ⇒ same reference. Cart total changed ⇒ the ' +
-      'stale pending row is abandoned and a fresh reference is issued. A paid cart returns ' +
-      '409 CART_ALREADY_PAID.',
+      'Recomputes the checkout preview server-side and creates (or idempotently reuses) the pending transaction.',
   })
   @ApiOkResponse({ description: 'Payment + hosted checkout URL to send the browser to' })
   initialize(
@@ -53,12 +49,7 @@ export class PaymentsController {
 
   @Get(':reference')
   @ApiBearerAuth('access-token')
-  @ApiOperation({
-    summary: 'Get a payment by reference (owner only)',
-    description:
-      'While PENDING, the payment is re-verified server-side with the provider on each read — ' +
-      'a safe fallback when the webhook is delayed. Other users’ references return 404.',
-  })
+  @ApiOperation({ summary: 'Get a payment by reference (owner only)' })
   getByReference(
     @CurrentUser('id') userId: string,
     @Param() params: PaymentReferenceParamDto,
@@ -73,7 +64,9 @@ export class PaymentsController {
     @Req() req: Request & { rawBody?: Buffer },
     @Headers('x-paystack-signature') signature?: string,
   ): Promise<{ received: boolean }> {
-    return this.payments.handlePaystackWebhook(req.rawBody, signature);
+    const paymentResult = await this.payments.handlePaystackWebhook(req.rawBody, signature);
+    await this.refunds.handlePaystackWebhook(req.rawBody, signature);
+    return paymentResult;
   }
 
   @Public()

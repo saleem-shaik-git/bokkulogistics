@@ -10,18 +10,12 @@ import { stores, type DatabaseConnection } from '@bokku/database';
 import type { CheckoutPreview } from '@bokku/shared';
 
 import { DELIVERY_PROVIDER, DRIZZLE_CLIENT } from '../../config/constants';
-import type { DeliveryProvider } from '../../integrations/delivery/delivery-provider.interface';
+import type { DeliveryProvider, DeliveryQuote } from '../../integrations/delivery/delivery-provider.interface';
 import { AddressesService } from '../addresses/addresses.service';
 import { CartService } from '../cart/cart.service';
 import { PricingService } from '../pricing/pricing.service';
 import type { PreviewCheckoutDto } from './dto/checkout.dto';
 
-/**
- * Checkout preview — the server computes EVERYTHING the user will pay:
- * live cart prices, a delivery fee quote from the configured provider,
- * and the PricingService breakdown. Read-only: previews change no state
- * and can be called repeatedly (safe to refresh before paying).
- */
 @Injectable()
 export class CheckoutService {
   constructor(
@@ -50,10 +44,19 @@ export class CheckoutService {
       });
     }
 
-    // Owner-scoped: another user's address id is simply not found (no IDOR).
     const address = this.addressesService.toPublicAddress(
       await this.addressesService.findOwned(userId, dto.addressId),
     );
+
+    // Delivery checkout requires an exact drop-off point. Saving an address
+    // without coordinates remains supported for profile/address-book use,
+    // but it cannot be used for a delivery quote until a map location is set.
+    if (address.latitude === null || address.longitude === null) {
+      throw new BadRequestException({
+        code: 'DELIVERY_COORDINATES_REQUIRED',
+        message: 'Please add a map location (latitude and longitude) to this delivery address',
+      });
+    }
 
     const [store] = await this.database.db
       .select({
@@ -68,19 +71,22 @@ export class CheckoutService {
       throw new InternalServerErrorException('Cart store no longer exists');
     }
     if (store.status !== 'ACTIVE') {
-      // A non-ACTIVE store takes no new business; in-flight orders keep
-      // their lifecycle. Payment initialize goes through this preview, so
-      // new billing is covered here too.
       throw new ConflictException({
         code: 'STORE_INACTIVE',
         message: 'This store is temporarily unavailable — please try again later',
       });
     }
+    if (store.latitude === null || store.longitude === null) {
+      throw new ConflictException({
+        code: 'STORE_LOCATION_UNAVAILABLE',
+        message: 'This store is not configured with a delivery location',
+      });
+    }
 
-    const quote = await this.delivery.getQuote({
+    const quote = await this.getValidQuote({
       pickup: {
-        latitude: store.latitude === null ? null : Number(store.latitude),
-        longitude: store.longitude === null ? null : Number(store.longitude),
+        latitude: Number(store.latitude),
+        longitude: Number(store.longitude),
       },
       dropoff: { latitude: address.latitude, longitude: address.longitude },
     });
@@ -115,5 +121,30 @@ export class CheckoutService {
         expiresAt: quote.expiresAt,
       },
     };
+  }
+
+  /**
+   * Providers may return a quote that is already expired (or expires during
+   * a slow response). Never expose such a quote as payable checkout state.
+   * Re-quoting once keeps transient expiry from becoming a false checkout
+   * failure while preventing stale delivery pricing from reaching payment.
+   */
+  private async getValidQuote(input: Parameters<DeliveryProvider['getQuote']>[0]): Promise<DeliveryQuote> {
+    let quote = await this.delivery.getQuote(input);
+    if (!this.isQuoteExpired(quote)) return quote;
+
+    quote = await this.delivery.getQuote(input);
+    if (this.isQuoteExpired(quote)) {
+      throw new ConflictException({
+        code: 'DELIVERY_QUOTE_EXPIRED',
+        message: 'The delivery quote expired before checkout could be completed. Please try again.',
+      });
+    }
+    return quote;
+  }
+
+  private isQuoteExpired(quote: DeliveryQuote): boolean {
+    const expiresAt = Date.parse(quote.expiresAt);
+    return !Number.isFinite(expiresAt) || expiresAt <= Date.now();
   }
 }

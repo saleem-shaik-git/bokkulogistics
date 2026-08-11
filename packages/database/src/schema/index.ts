@@ -10,6 +10,7 @@ export * from './store-staff';
 export * from './carts';
 export * from './addresses';
 export * from './payments';
+export * from './refunds';
 export * from './orders';
 export * from './deliveries';
 export * from './notifications';
