@@ -4,8 +4,7 @@ Independent commerce & delivery orchestration platform. Customers shop from
 **Bokku**, choose a delivery provider (Uber / Bolt / mock), pay via Paystack,
 and track the order from *pending payment* to *delivered*.
 
-> Status: **Phase 3 — Catalogue** complete. Business features land per the
-> phased plan in [`docs/architecture/overview.md`](docs/architecture/overview.md).
+> Status: **Phases 1–12 MVP complete.** Business features and hardening are implemented per the phased plan in [`docs/architecture/overview.md`](docs/architecture/overview.md).
 
 > Conventions worth knowing:
 > - **Money is always integer kobo** (`price`, all fees) — never floats. ₦1 = 100 kobo.
