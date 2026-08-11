@@ -1,0 +1,56 @@
+import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
+
+import { AppConfigModule } from './config/config.module';
+import { DatabaseModule } from './database/database.module';
+import { RequestContextModule } from './common/request-context.module';
+import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
+import { RolesGuard } from './common/guards/roles.guard';
+import { HealthModule } from './modules/health/health.module';
+import { AuditModule } from './modules/audit/audit.module';
+import { AuthModule } from './modules/auth/auth.module';
+import { UsersModule } from './modules/users/users.module';
+import { StoresModule } from './modules/stores/stores.module';
+import { ProductsModule } from './modules/products/products.module';
+import { CartModule } from './modules/cart/cart.module';
+import { AddressesModule } from './modules/addresses/addresses.module';
+import { CheckoutModule } from './modules/checkout/checkout.module';
+import { OrdersModule } from './modules/orders/orders.module';
+import { PaymentsModule } from './modules/payments/payments.module';
+import { DeliveriesModule } from './modules/deliveries/deliveries.module';
+import { BokkuModule } from './modules/bokku/bokku.module';
+import { AdminModule } from './modules/admin/admin.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
+import { RateLimitModule } from './modules/rate-limit/rate-limit.module';
+
+@Module({
+  imports: [
+    AppConfigModule,
+    RequestContextModule,
+    DatabaseModule,
+    AuditModule,
+    AuthModule,
+    UsersModule,
+    HealthModule,
+    StoresModule,
+    ProductsModule,
+    CartModule,
+    AddressesModule,
+    CheckoutModule,
+    OrdersModule,
+    PaymentsModule,
+    DeliveriesModule,
+    BokkuModule,
+    AdminModule,
+    NotificationsModule,
+    RateLimitModule,
+  ],
+  providers: [
+    // Order matters: authenticate first, authorize second.
+    // (Rate limiting registers itself last via RateLimitModule so
+    // authenticated requests can be limited per user id.)
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: RolesGuard },
+  ],
+})
+export class AppModule {}

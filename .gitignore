@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+.next/
+out/
+coverage/
+.turbo/
+
+# Tests
+tests/e2e/test-results/
+playwright-report/
+test-results/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Environment files — NEVER commit real secrets
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+
+# Local dev services (binaries + data, installed by scripts/setup-dev-services.sh)
+.services/
+
+# Generated / build metadata
+apps/web/next-env.d.ts
+*.tsbuildinfo

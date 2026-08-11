@@ -1,0 +1,30 @@
+{
+  "name": "bokku-logistics",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Bokku Logistics — commerce & delivery orchestration platform",
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "db:generate": "pnpm --filter @bokku/database db:generate",
+    "db:migrate": "pnpm --filter @bokku/database db:migrate",
+    "db:seed": "pnpm --filter @bokku/database db:seed",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "eslint": "*",
+    "globals": "*",
+    "prettier": "*",
+    "turbo": "*",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "*"
+  }
+}

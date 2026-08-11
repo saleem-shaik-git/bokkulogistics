@@ -1,0 +1,101 @@
+name: bokku-logistics
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: bokku-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bokku
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bokku_dev_password}
+      POSTGRES_DB: bokku_dev
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U bokku -d bokku_dev']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [bokku]
+
+  redis:
+    image: redis:7-alpine
+    container_name: bokku-redis
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes']
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [bokku]
+
+  api:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/api.Dockerfile
+    container_name: bokku-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DATABASE_URL: postgresql://bokku:${POSTGRES_PASSWORD:-bokku_dev_password}@postgres:5432/bokku_dev
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?Set JWT_REFRESH_SECRET in .env}
+    ports:
+      - '4000:4000'
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:4000/api/v1/health || exit 1']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks: [bokku]
+
+  web:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/web.Dockerfile
+    container_name: bokku-web
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_started
+    environment:
+      NODE_ENV: production
+      API_INTERNAL_URL: http://api:4000
+    ports:
+      - '3000:3000'
+    networks: [bokku]
+
+  # Optional reverse proxy: `docker compose --profile proxy up`
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: bokku-nginx
+    profiles: ['proxy']
+    restart: unless-stopped
+    depends_on: [api, web]
+    ports:
+      - '80:80'
+    volumes:
+      - ./infrastructure/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks: [bokku]
+
+volumes:
+  postgres-data:
+  redis-data:
+
+networks:
+  bokku:
+    driver: bridge

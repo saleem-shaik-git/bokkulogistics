@@ -1,0 +1,44 @@
+{
+  "name": "@bokku/api",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Bokku Logistics REST API (NestJS)",
+  "scripts": {
+    "dev": "nest start --watch",
+    "build": "nest build",
+    "start": "node dist/main.js",
+    "lint": "eslint src test",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@bokku/config": "workspace:^",
+    "@bokku/database": "workspace:^",
+    "@bokku/shared": "workspace:^",
+    "@nestjs/common": "^11.1.28",
+    "@nestjs/core": "^11.1.28",
+    "@nestjs/jwt": "^11.0.2",
+    "@nestjs/platform-express": "^11.1.28",
+    "@nestjs/swagger": "^11.4.6",
+    "@node-rs/argon2": "^2.0.2",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.15.1",
+    "dotenv": "^17.4.2",
+    "drizzle-orm": "^0.45.2",
+    "helmet": "^8.3.0",
+    "ioredis": "^6.0.0",
+    "postgres": "^3.4.9",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^11.0.24",
+    "@swc/core": "^1.15.47",
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.2.0",
+    "@vitest/coverage-v8": "^4.1.10",
+    "tsx": "^4.23.11",
+    "unplugin-swc": "^1.5.10",
+    "vitest": "^4.1.10"
+  }
+}

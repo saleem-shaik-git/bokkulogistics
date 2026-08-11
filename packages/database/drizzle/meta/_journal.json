@@ -1,0 +1,18 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {"idx": 0, "version": "7", "when": 1786306848393, "tag": "0000_blue_shadow_king", "breakpoints": true},
+    {"idx": 1, "version": "7", "when": 1786306964934, "tag": "0001_soft_green_goblin", "breakpoints": true},
+    {"idx": 2, "version": "7", "when": 1786311123102, "tag": "0002_overjoyed_random", "breakpoints": true},
+    {"idx": 3, "version": "7", "when": 1786313790710, "tag": "0003_long_power_pack", "breakpoints": true},
+    {"idx": 4, "version": "7", "when": 1786314913153, "tag": "0004_old_wild_pack", "breakpoints": true},
+    {"idx": 5, "version": "7", "when": 1786315950462, "tag": "0005_many_unicorn", "breakpoints": true},
+    {"idx": 6, "version": "7", "when": 1786317554524, "tag": "0006_large_talkback", "breakpoints": true},
+    {"idx": 7, "version": "7", "when": 1786321271530, "tag": "0007_motionless_supreme_intelligence", "breakpoints": true},
+    {"idx": 8, "version": "7", "when": 1786326479474, "tag": "0008_notify_feed", "breakpoints": true},
+    {"idx": 9, "version": "7", "when": 1786400000000, "tag": "0009_financial_integrity", "breakpoints": true},
+    {"idx": 10, "version": "7", "when": 1786480000000, "tag": "0010_refund_state", "breakpoints": true},
+    {"idx": 11, "version": "7", "when": 1786480001000, "tag": "0011_refund_payment_guard", "breakpoints": true}
+  ]
+}
