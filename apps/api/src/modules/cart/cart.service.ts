@@ -26,9 +26,12 @@ import type { AddCartItemDto, UpdateCartItemDto } from './dto/cart.dto';
  * Customer cart. Invariants enforced here:
  *  - one cart per user, locked to a single store;
  *  - only ACTIVE, non-deleted products can be added;
- *  - quantities never exceed sellable stock (UX guard — the never-negative
- *    stock invariant itself is enforced at checkout via conditional UPDATEs);
+ *  - quantity checks are serialized on the product's inventory row so two
+ *    concurrent cart mutations cannot both validate against stale stock;
  *  - prices/totals are computed from the products table on every read.
+ *
+ * Checkout remains the final inventory authority: cart quantities are intent,
+ * while checkout/order conversion performs the conditional stock reservation.
  */
 @Injectable()
 export class CartService {
@@ -63,10 +66,9 @@ export class CartService {
 
   /** Add (or merge into) a cart line. Creates the cart lazily on first add. */
   async addItem(userId: string, dto: AddCartItemDto): Promise<PublicCart> {
-    const { product, sellable } = await this.requirePurchasableProduct(dto.productId);
+    const { product } = await this.requirePurchasableProduct(dto.productId);
     const cart = await this.getOrCreateCart(userId, product.storeId);
 
-    // Single-store carts: the cart adopts the store of its first item.
     if (cart.storeId !== product.storeId) {
       throw new ConflictException({
         code: 'CART_STORE_CONFLICT',
@@ -74,37 +76,68 @@ export class CartService {
       });
     }
 
-    const [existing] = await this.database.db
-      .select()
-      .from(cartItems)
-      .where(and(eq(cartItems.cartId, cart.id), eq(cartItems.productId, product.id)))
-      .limit(1);
-    this.assertPurchasable(product, sellable, (existing?.quantity ?? 0) + dto.quantity);
+    await this.database.db.transaction(async (tx) => {
+      // Serialize cart mutations for this product against inventory changes.
+      // The checkout reservation still remains the authoritative stock guard.
+      const [stock] = await tx
+        .select({
+          inventory: inventory,
+          sellable: sql<number>`${inventory.quantityOnHand} - ${inventory.reservedQuantity}`,
+        })
+        .from(inventory)
+        .where(and(eq(inventory.productId, product.id), eq(inventory.storeId, product.storeId)))
+        .for('update')
+        .limit(1);
 
-    // Atomic upsert — re-adding a product merges quantities, never duplicates.
-    await this.database.db
-      .insert(cartItems)
-      .values({ cartId: cart.id, productId: product.id, quantity: dto.quantity })
-      .onConflictDoUpdate({
-        target: [cartItems.cartId, cartItems.productId],
-        set: {
-          quantity: sql`${cartItems.quantity} + ${dto.quantity}`,
-          updatedAt: new Date(),
-        },
-      });
+      const sellable = Number(stock?.sellable ?? 0);
+      const [existing] = await tx
+        .select()
+        .from(cartItems)
+        .where(and(eq(cartItems.cartId, cart.id), eq(cartItems.productId, product.id)))
+        .limit(1);
+
+      this.assertPurchasable(product, sellable, (existing?.quantity ?? 0) + dto.quantity);
+
+      await tx
+        .insert(cartItems)
+        .values({ cartId: cart.id, productId: product.id, quantity: dto.quantity })
+        .onConflictDoUpdate({
+          target: [cartItems.cartId, cartItems.productId],
+          set: {
+            quantity: sql`${cartItems.quantity} + ${dto.quantity}`,
+            updatedAt: new Date(),
+          },
+        });
+    });
+
     return this.getCart(userId);
   }
 
   /** Set the exact quantity of a cart line owned by the user. */
   async updateItem(userId: string, itemId: string, dto: UpdateCartItemDto): Promise<PublicCart> {
     const line = await this.findOwnedLine(userId, itemId);
-    const { product, sellable } = await this.requirePurchasableProduct(line.productId);
-    this.assertPurchasable(product, sellable, dto.quantity);
+    const { product } = await this.requirePurchasableProduct(line.productId);
 
-    await this.database.db
-      .update(cartItems)
-      .set({ quantity: dto.quantity, updatedAt: new Date() })
-      .where(eq(cartItems.id, line.id));
+    await this.database.db.transaction(async (tx) => {
+      const [stock] = await tx
+        .select({
+          inventory: inventory,
+          sellable: sql<number>`${inventory.quantityOnHand} - ${inventory.reservedQuantity}`,
+        })
+        .from(inventory)
+        .where(and(eq(inventory.productId, product.id), eq(inventory.storeId, product.storeId)))
+        .for('update')
+        .limit(1);
+
+      const sellable = Number(stock?.sellable ?? 0);
+      this.assertPurchasable(product, sellable, dto.quantity);
+
+      await tx
+        .update(cartItems)
+        .set({ quantity: dto.quantity, updatedAt: new Date() })
+        .where(eq(cartItems.id, line.id));
+    });
+
     return this.getCart(userId);
   }
 
@@ -124,8 +157,6 @@ export class CartService {
     return { cleared: true };
   }
 
-  // ── Helpers ─────────────────────────────────────────────────────
-
   private async findCart(userId: string): Promise<Cart | null> {
     const [cart] = await this.database.db
       .select()
@@ -139,8 +170,6 @@ export class CartService {
     const existing = await this.findCart(userId);
     if (existing) return existing;
 
-    // The unique index on user_id makes the first cart creation race-safe:
-    // a concurrent insert conflicts and falls through to the re-select.
     const [created] = await this.database.db
       .insert(carts)
       .values({ userId, storeId })
@@ -153,7 +182,6 @@ export class CartService {
     return cart;
   }
 
-  /** Load a product for carting: must exist and not be soft-deleted. */
   private async requirePurchasableProduct(
     productId: string,
   ): Promise<{ product: Product; sellable: number }> {
@@ -169,7 +197,6 @@ export class CartService {
     return row;
   }
 
-  /** A cart line only exists for this operation when it belongs to the user. */
   private async findOwnedLine(userId: string, itemId: string): Promise<CartItem> {
     const [row] = await this.database.db
       .select({ item: cartItems })
@@ -186,7 +213,6 @@ export class CartService {
     return row.item;
   }
 
-  /** Status + stock guard rails shared by add and update. */
   private assertPurchasable(product: Product, sellable: number, requestedQuantity: number): void {
     if (product.status !== 'ACTIVE') {
       throw new ConflictException({
